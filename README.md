@@ -46,7 +46,7 @@ BCP version 1.18
 
 See ``BCP_analysis.sh`` for commands.
 
-##R Software and Scripts
+## R Software and Scripts
 
 ### Chapter 2
 
