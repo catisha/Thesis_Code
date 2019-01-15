@@ -1,0 +1,302 @@
+---
+title: "Analysis of MUSIC output"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+Analysis of the thor output in R for ChIP-seq data for p300 on human cells at times 0 and 30. There were two replicates at time 30. Data was aligned to human genome hg38 using BWA and subsequently filtered (see *process_alignments.sh* in *~/Documents/Aim_2/Ramos_2010/p300*). Only looking at chromosome 21 for now.   
+
+Version and full command used can be found in file: 
+
+
+Download the neccessary packages:
+```{r}
+library(tidyverse)
+library(readr)
+
+library(GenomicRanges)
+library(rtracklayer)
+
+library(Gviz)
+library(biomaRt)
+
+```
+
+Download the data:
+
+```{r}
+    chr_summits=tibble()
+ 
+
+ tmp=as.tibble(read_table2("~/Documents/Aim_2/homo_sapiens_neutrophil/MUSIC_analysis/default_ERs_MUSIC.bed", 
+    col_names = FALSE)) 
+  colnames(tmp)=c("chr", "start", "end", "name", "log_10_qvalue", "strand", "summit_position", "mappable_trough_position", "fold_change")
+  tmp=dplyr::select(tmp,chr,start,	end	,log_10_qvalue, fold_change)
+    chr_summits=rbind(chr_summits, tmp)
+
+tail(chr_summits)
+
+music=dplyr::rename(chr_summits, Chrom=chr, Start=start, End=end, Score=log_10_qvalue)
+
+```
+
+
+```{r}
+
+music_event=GRanges(
+  seqnames=paste0("chr",Rle(chr_summits$chr)),
+  ranges = IRanges(chr_summits$start, end=chr_summits$end, names=seq(length(chr_summits$start))),
+  strand=Rle(strand('*'), c(nrow(chr_summits))),
+  score=chr_summits$log_10_qvalue)
+
+
+```
+
+
+
+# Visualisation with Gviz
+
+I loaded the Gviz library and the biomaRt library. 
+
+I created a biomaRt object from ensembl containing the annotations for the human genome. I made sure that I had the correct version of the human genome (hg18). 
+
+This was used to generated gene model data for the region of interest on chromosome 21.
+
+
+# Genes overlapping with enriched regions
+
+I create a list of genes with attributes that are found in chromosome 21. 
+
+```{r}
+
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/mar2016egs")
+ x=replace(egs$chromosome_name, list=which(egs$chromosome_name=="MT"), values=c("M"))
+ x["M"]
+# 
+# 
+ egs$chromosome_name=x
+
+filter(music, Chrom=="Mt")
+```
+
+And converted this to a Granges object. 
+
+```{r}
+gene_regions = 
+  GRanges(seqnames = paste0("chr",Rle(egs$chromosome_name )),
+          ranges = IRanges( start = egs$start_position,
+                            end = egs$end_position ),
+          strand = Rle( rep("*", nrow(egs)) ),
+          gene = egs$ensembl_gene_id,
+          entrez=egs$entrezgene)
+head(gene_regions)
+```
+
+
+# Creating gene/promoter lists for comparison with ranciati code
+
+I want to create a list to compare to the list generated from the macs2 peaks and similar programs. 
+
+I decided to be as broad as possible, and will include a regions $\plus 200$bp around the start of the gene to cover the promoter region, as well as the rest of the gene. 
+
+```{r}
+
+egs$TSS = ifelse( egs$strand == "1", egs$start_position, egs$end_position )
+
+#ifelse( egs$stand == "1", egs$TSS-200, egs$start_position)
+
+head(egs)
+gene_regions
+gene_promoter_regions = 
+  GRanges(seqnames = Rle( paste0("chr",egs$chromosome_name) ),
+          ranges = IRanges( 
+            start=ifelse( egs$strand == "1", egs$TSS-200, egs$start_position),          
+            end=ifelse(egs$strand == "-1", egs$TSS+200, egs$end_position)),
+          strand = Rle( rep("*", nrow(egs)) ),
+          gene = egs$ensembl_gene_id)
+gene_promoter_regions
+```
+
+Get 3 gene lists, overlaps only in T0, overlaps only in T30, overlaps in both. Removed multiple hits on the same gene. 
+
+
+```{r}
+ovlp3_gene_promoter = findOverlaps(gene_promoter_regions, music_event )
+
+genes_promoter=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter ) ),]) %>%
+    add_column(score=music_event[to(ovlp3_gene_promoter)]$score) %>% 
+  group_by(entrezgene) %>%
+  filter(score==min(score)) %>%
+  distinct()
+
+
+hist(as.numeric(genes_promoter$chromosome_name))
+
+```
+
+
+
+Save as a list
+
+```{r}
+
+music_gene_lists=list(genes_promoter=genes_promoter)
+
+save(music_gene_lists, file="~/Documents/Aim_2/homo_sapiens_neutrophil/MUSIC_analysis/music_coding_gene_lists_mar2016")
+
+```
+
+
+# Changing Thresholds
+
+
+
+```{r}
+
+
+music_arranged=arrange(music, (Score)) %>%
+  mutate(qval=10^Score) %>%
+  dplyr::rename(Stop=End)
+# macs_all_pvalues=tibble(Start=macs_peaks_all_pvalues$start,Stop=macs_peaks_all_pvalues$end, Chrom=macs_peaks_all_pvalues$chr, log10pval=macs_peaks_all_pvalues$`-log10(pvalue)`)
+plot(music_arranged$qval)
+# boxplot(c(macs$Stop-macs$Start, (macs_all_pvalues$Stop-(macs_all_pvalues$Start))))
+
+    music_top_10000=music_arranged[1:(nrow(music_arranged)/1.9),]
+    music_top_5000=music_arranged[1:(nrow(music_arranged)/5.1),]
+    music_top_2000=music_arranged[1:(nrow(music_arranged)/12.7),]
+    music_top_1000=music_arranged[1:(nrow(music_arranged)/24.7),]
+
+get_threshold_gene_lists=function(macs_arranged, n_500, n_1000, n_2000, n_4000, n_10000){
+    macs_top_10000=macs_arranged[1:(nrow(macs_arranged)/n_10000),]
+    macs_top_5000=macs_arranged[1:(nrow(macs_arranged)/n_4000),]
+    macs_top_2000=macs_arranged[1:(nrow(macs_arranged)/n_2000),]
+    macs_top_1000=macs_arranged[1:(nrow(macs_arranged)/n_1000),]
+    macs_top_500=macs_arranged[1:(nrow(macs_arranged)/n_500),]
+     
+  
+    macs_top_10000_event=GRanges(
+      seqnames=Rle(paste0("chr",macs_top_10000$Chrom)),
+      ranges = IRanges(macs_top_10000$Start, end=macs_top_10000$Stop, names=seq(length(macs_top_10000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_10000))),
+      Score=macs_top_10000$Score)
+    
+    
+    macs_top_5000_event=GRanges(
+      seqnames=Rle(paste0("chr",macs_top_5000$Chrom)),
+      ranges = IRanges(macs_top_5000$Start, end=macs_top_5000$Stop, names=seq(length(macs_top_5000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_5000))),
+      Score=macs_top_5000$Score)
+    
+    
+    macs_top_2000_event=GRanges(
+      seqnames=Rle(paste0("chr",macs_top_2000$Chrom)),
+      ranges = IRanges(macs_top_2000$Start, end=macs_top_2000$Stop, names=seq(length(macs_top_2000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_2000))),
+      Score=macs_top_2000$Score)
+    
+    
+    macs_top_1000_event=GRanges(
+      seqnames=Rle(paste0("chr",macs_top_1000$Chrom)),
+      ranges = IRanges(macs_top_1000$Start, end=macs_top_1000$Stop, names=seq(length(macs_top_1000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_1000))),
+      Score=macs_top_1000$Score)
+  
+    macs_top_500_event=GRanges(
+      seqnames=Rle(paste0("chr",macs_top_500$Chrom)),
+      ranges = IRanges(macs_top_500$Start, end=macs_top_500$Stop, names=seq(length(macs_top_500$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_500))),
+      Score=macs_top_500$Score)
+  
+      
+    ovlp3_gene_promoter_10000 = findOverlaps(gene_promoter_regions, macs_top_10000_event )
+    ovlp3_gene_promoter_5000 = findOverlaps(gene_promoter_regions, macs_top_5000_event )
+    ovlp3_gene_promoter_2000 = findOverlaps(gene_promoter_regions, macs_top_2000_event )
+    ovlp3_gene_promoter_1000 = findOverlaps(gene_promoter_regions, macs_top_1000_event )
+    ovlp3_gene_promoter_500 = findOverlaps(gene_promoter_regions, macs_top_500_event )
+  
+    #T0_gene_promoter=gene_promoter_regions[to(ovlp3_T0_gene_promoter)]
+    #T30_gene_promoter=gene_promoter_regions[to(ovlp3_T30_gene_promoter)]
+    
+
+      genes_promoter_500=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_500 ) ),]) %>%
+      add_column(Score=macs_top_500_event[to(ovlp3_gene_promoter_500)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==max(Score))   %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+        
+    genes_promoter_1000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_1000 ) ),]) %>%
+        add_column(Score=macs_top_1000_event[to(ovlp3_gene_promoter_1000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==max(Score))   %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    
+    genes_promoter_2000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_2000 ) ),]) %>%
+        add_column(Score=macs_top_2000_event[to(ovlp3_gene_promoter_2000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==max(Score)) %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    genes_promoter_4000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_5000 ) ),]) %>%
+        add_column(Score=macs_top_5000_event[to(ovlp3_gene_promoter_5000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==max(Score)) %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    genes_promoter_10000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_10000 ) ),]) %>%
+        add_column(Score=macs_top_10000_event[to(ovlp3_gene_promoter_10000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==max(Score)) %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    return(list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_10000))
+
+}
+
+
+
+music_threshold_genes=get_threshold_gene_lists(macs_arranged = music_arranged,n_500=46.7, n_1000 = 24.35, n_2000 = 12.46,n_4000 =  6.2, n_10000 = 1)
+
+
+```
+
+
+
+
+```{r}
+
+genes_promoter_500=music_threshold_genes[[1]]
+genes_promoter_1000=music_threshold_genes[[2]]
+genes_promoter_2000=music_threshold_genes[[3]]
+genes_promoter_4000=music_threshold_genes[[4]]
+genes_promoter_all=music_threshold_genes[[5]]
+
+tail(genes_promoter_1000)
+tail(genes_promoter_2000[1:1000,])
+tail(genes_promoter_4000[1:1000,])
+tail(genes_promoter_all[1:1000,])
+
+plot(genes_promoter_all$Score, col="red", type="l")+ #ylim=c(-70,-10), xlim=c(0,5000))+
+  points(genes_promoter_4000$Score, col="blue", type="l")+
+  points(genes_promoter_2000$Score, col="green", type="l")+
+  points(genes_promoter_1000$Score, col="orange", type="l")+
+  points(genes_promoter_500$Score, col="pink", type="l")
+
+
+upset(fromList(list(top_500=genes_promoter_500$entrezgene, top_1000=genes_promoter_1000$entrezgene, top_2000=genes_promoter_2000$entrezgene, top_5000=genes_promoter_4000$entrezgene, all=genes_promoter_all$entrezgene)))
+
+
+save(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all, file="~/Documents/Aim_2/homo_sapiens_neutrophil/MUSIC_analysis/music_4_thresholds_genes_mar2016")
+
+```

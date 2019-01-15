@@ -1,0 +1,787 @@
+---
+title: "lca_peak_thresholds"
+author: "a1667810 Catisha Coburn"
+date: "15 November 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(randomLCA)
+library(UpSetR)
+
+```
+
+
+# Chaging gene list lengths
+```{r}
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/macs_analysis/macs_4_thresholds_genes_mar2016")
+macs_gene_lists=list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all)
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/THOR_analysis/thor_4_thresholds_genes_mar2016")
+thor_gene_lists=list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all)
+
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/HOMER_analysis/homer_4_thresholds_genes_mar2016")
+homer_gene_lists=list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all)
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/BCP_analysis/bcp_4_thresholds_genes_mar2016")
+bcp_gene_lists=list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all)
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/MUSIC_analysis/music_4_thresholds_genes_mar2016")
+music_gene_lists=list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all)
+
+
+program_list=c("MACS2","HOMER","THOR","BCP", "MUSIC")
+n_programs=6
+
+```
+
+```{r}
+gene_lists=tibble("Peak Caller"=program_list, 
+       "Gene List 500"=c(nrow(macs_gene_lists[[1]]),
+                     nrow(homer_gene_lists[[1]]), #gotit
+                     nrow(thor_gene_lists[[1]]), #gotit
+                     nrow(bcp_gene_lists[[1]]), #gotit - not much bigger
+                     nrow(music_gene_lists[[1]])),
+       "Gene List 1000"=c(nrow(macs_gene_lists[[2]]),
+                     nrow(homer_gene_lists[[2]]), #gotit
+                     nrow(thor_gene_lists[[2]]), #gotit
+                     nrow(bcp_gene_lists[[2]]), #gotit - not much bigger
+                     nrow(music_gene_lists[[2]])),
+       "Gene List 2000"=c(nrow(macs_gene_lists[[3]]),
+                     nrow(homer_gene_lists[[3]]), #gotit
+                     nrow(thor_gene_lists[[3]]), #gotit
+                     nrow(bcp_gene_lists[[3]]), #gotit - not much bigger
+                     nrow(music_gene_lists[[3]])),
+       "Gene List 4000"=c(nrow(macs_gene_lists[[4]]),
+                     nrow(homer_gene_lists[[4]]), #gotit
+                     nrow(thor_gene_lists[[4]]), #gotit
+                     nrow(bcp_gene_lists[[4]]), #gotit - not much bigger
+                     nrow(music_gene_lists[[4]])),
+       "Gene List 10000"=c(nrow(macs_gene_lists[[5]]),
+                     nrow(homer_gene_lists[[5]]), #gotit
+                     nrow(thor_gene_lists[[5]]), #gotit
+                     nrow(bcp_gene_lists[[5]]), #gotit - not much bigger
+                     nrow(music_gene_lists[[5]]))) #gotit, the same as the normal one 
+#Need to redo with the peaks...maybe in Chapter1?
+
+library(Hmisc)
+latex(as.matrix(gene_lists), file="~/Documents/Thesis/Images/lca_peak_thresholds_gene_lists_mar2016")
+```
+
+
+```{r}
+library(UpSetR)
+
+#jpeg(file="~/Documents/Thesis/Images/Gene_lists_500.jpeg")
+upset(fromList(list(
+  MACS2=macs_gene_lists[[1]]$ensembl_gene_id, 
+  HOMER=homer_gene_lists[[1]]$ensembl_gene_id,
+  THOR=thor_gene_lists[[1]]$ensembl_gene_id,
+  BCP=bcp_gene_lists[[1]]$ensembl_gene_id,
+  MUSIC=music_gene_lists[[1]]$ensembl_gene_id)),
+  sets=c("MACS2", "HOMER", "THOR", "BCP", "MUSIC"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=5,
+      show.numbers = FALSE,
+      set_size.angles = 90,
+      text.scale = 1.5)
+
+#dev.off()
+
+#jpeg(file="~/Documents/Thesis/Images/Gene_lists_1000.jpeg")
+
+upset(fromList(list(
+  MACS2=macs_gene_lists[[2]]$ensembl_gene_id, 
+  HOMER=homer_gene_lists[[2]]$ensembl_gene_id,
+  THOR=thor_gene_lists[[2]]$ensembl_gene_id,
+  BCP=bcp_gene_lists[[2]]$ensembl_gene_id,
+  MUSIC=music_gene_lists[[2]]$ensembl_gene_id)),
+  sets=c("MACS2", "HOMER", "THOR", "BCP", "MUSIC"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=5,
+      show.numbers = FALSE,
+      set_size.angles = 90,
+      text.scale = 1.5)
+#dev.off()
+
+#jpeg(file="~/Documents/Thesis/Images/Gene_lists_2000.jpeg")
+upset(fromList(list(
+  MACS2=macs_gene_lists[[3]]$ensembl_gene_id, 
+  HOMER=homer_gene_lists[[3]]$ensembl_gene_id,
+  THOR=thor_gene_lists[[3]]$ensembl_gene_id,
+  BCP=bcp_gene_lists[[3]]$ensembl_gene_id,
+  MUSIC=music_gene_lists[[3]]$ensembl_gene_id)),
+  sets=c("MACS2", "HOMER", "THOR", "BCP", "MUSIC"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=5,
+      show.numbers = FALSE,
+      set_size.angles = 90,
+      text.scale = 1.5)
+#dev.off()
+
+#jpeg(file="~/Documents/Thesis/Images/Gene_lists_5000.jpeg")
+upset(fromList(list(
+  MACS2=macs_gene_lists[[4]]$ensembl_gene_id, 
+  HOMER=homer_gene_lists[[4]]$ensembl_gene_id,
+  THOR=thor_gene_lists[[4]]$ensembl_gene_id,
+  BCP=bcp_gene_lists[[4]]$ensembl_gene_id,
+  MUSIC=music_gene_lists[[4]]$ensembl_gene_id)),
+  sets=c("MACS2", "HOMER", "THOR", "BCP", "MUSIC"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=5,
+      show.numbers = FALSE,
+      set_size.angles = 90,
+      text.scale = 1.5)
+#dev.off()
+
+#jpeg(file="~/Documents/Thesis/Images/Gene_lists_all.jpeg")
+upset(fromList(list(
+  MACS2=macs_gene_lists[[5]]$ensembl_gene_id, 
+  HOMER=homer_gene_lists[[5]]$ensembl_gene_id,
+  THOR=thor_gene_lists[[5]]$ensembl_gene_id,
+  BCP=bcp_gene_lists[[5]]$ensembl_gene_id,
+  MUSIC=music_gene_lists[[5]]$ensembl_gene_id)),
+  sets=c("MACS2", "HOMER", "THOR", "BCP", "MUSIC"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=5,
+      show.numbers = FALSE,
+      set_size.angles = 90,
+      text.scale = 1.5)
+#dev.off()
+
+```
+
+```{r}
+library(permute)
+
+
+perm.matrix=as.tibble(allPerms(5)) %>%
+  rbind(.,c(1,2,3,4,5))# matix of permutations for thresholds
+
+
+perm.matrix=expand.grid(rep(list(c(2,4,5)), 5))
+colnames(perm.matrix)=c("macs", "homer", "thor", "bcp", "music")
+
+(perm.matrix)
+
+
+```
+```{r}
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/mar2016egs")
+head(egs)
+```
+
+
+```{r}
+
+lca_perm=function(macs_gene_lists, homer_gene_lists, thor_gene_lists, bcp_gene_lists, music_gene_lists, permutation){
+  # Create overlap from permuation
+  # permutation=tibble(macs=4,homer=2,thor=2,bcp=2,music=2)
+  overlap=tibble(ensembl_gene_id=egs$ensembl_gene_id, entrezgene=egs$entrezgene) %>%
+  left_join(., macs_gene_lists[[permutation$macs]], suffix=c("","_macs")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs=log10pval) %>%
+  left_join(., homer_gene_lists[[permutation$homer]], suffix=c("", "homer")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene,macs, homer=Score) %>%
+  left_join(., thor_gene_lists[[permutation$thor]], suffix=c("", "thor")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs, homer, thor=score) %>%
+  left_join(., bcp_gene_lists[[permutation$bcp]], suffix=c("", "bcp")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene,macs, homer, thor, bcp=Score) %>%
+  left_join(., music_gene_lists[[permutation$music]], suffix=c("", "music")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene, macs, homer, thor, bcp, music=Score)
+  
+  overlap$macs=recode(overlap$macs, .missing=0, .default=1)
+  overlap$homer=recode(overlap$homer, .missing=0, .default=1)
+  overlap$thor=recode(overlap$thor, .missing=0, .default=1)
+  overlap$bcp=recode(overlap$bcp, .missing=0, .default=1)
+  overlap$music=recode(overlap$music, .missing=0, .default=1)
+  overlap    
+  
+  # Organise tibble for LCA
+  
+  overlap_freqs=overlap %>%
+  dplyr::group_by(macs, homer, thor, bcp, music) %>%
+  summarise(freq=n())
+  
+  
+  overlap_freqs_withnone = overlap_freqs %>%
+  full_join(as.tibble(expand.grid(
+    macs=c(0,1),
+    homer=c(0,1),
+    thor=c(0,1),
+    bcp=c(0,1),
+    music=c(0,1))))  %>%
+    mutate(freq=replace_na(freq, 0))
+  
+  
+  library(randomLCA)
+  set.seed(161118)
+   programs_lca_2= tryCatch({
+
+  randomLCA(overlap_freqs_withnone[,1:5], freq=overlap_freqs_withnone$freq, 
+                        random=FALSE, nclass=2, quadpoints = 190, probit=T, qniterations=5)
+   
+  }, error=function(e){
+   cat("ERROR :",conditionMessage(e), "\n")
+    return(NA)}) 
+   
+  programs_lca_2_random=tryCatch({
+
+  randomLCA(overlap_freqs_withnone[,1:5], freq=overlap_freqs_withnone$freq, 
+                       random=TRUE, nclass=2, quadpoints = 190, probit=T, qniterations=5)
+}, error=function(e){
+   cat("ERROR :",conditionMessage(e), "\n")
+    return(NA)}) 
+  #programs_lca_1_random=randomLCA(overlap_freqs_withnone[,1:5], freq=overlap_freqs_withnone$freq, 
+  #                     random=TRUE,nclass=1)
+   programs_lca_2_random_noconst=tryCatch({
+            
+   randomLCA(overlap_freqs_withnone[,1:5], freq=overlap_freqs_withnone$freq, 
+                        random=TRUE, nclass=2, quadpoints=190, probit=T, constload = FALSE)
+  }, error=function(e){
+   cat("ERROR :",conditionMessage(e), "\n")
+    return(NA)}) 
+  # programs_lca_1_noconst=randomLCA(overlap_freqs_withnone[,1:5], freq=overlap_freqs_withnone$freq, 
+  #                      random=TRUE,nclass=1, constload = FALSE)
+
+  # programs_results=list(programs_lca_1, programs_lca_2, programs_lca_1_random, programs_lca_2_random, programs_lca_1_noconst,
+                        # programs_lca_2_noconst)
+  #programs_BIC=data.frame(classes=c(1:2, "1_r", "2_r", "1_nc", "2_nc"), bic=c(BIC(programs_lca_1), BIC(programs_lca_2),
+#                          BIC(programs_lca_1_random), BIC(programs_lca_2_random), BIC(progrmas_lca_1_noconst), BIC(programs_lca_2_noconst)))
+
+  return(list(normal=programs_lca_2, random.cl=programs_lca_2_random, random.ncl=programs_lca_2_random_noconst, overlap=overlap))
+}
+
+results_lca=lca_perm(macs_gene_lists, homer_gene_lists, thor_gene_lists, bcp_gene_lists, music_gene_lists, perm.matrix[1,])
+
+
+temp_normal=(results_lca$overlap) %>%
+    left_join(postClassProbs(results_lca$normal))
+post_normal=tibble(ensembl_gene_id=temp_normal$ensembl_gene_id, entrezgene=temp_normal$entrezgene, p.1=temp_normal$`Class 1`)  
+
+temp_random.cl=(results_lca$overlap) %>%
+    left_join(postClassProbs(results_lca$random.cl))
+post_random.cl=tibble(ensembl_gene_id=temp_normal$ensembl_gene_id, entrezgene=temp_normal$entrezgene, p.1=temp_random.cl$`Class 1`)
+
+temp_random.ncl=(results_lca$overlap) %>%
+    left_join(postClassProbs(results_lca$random.ncl))
+post_random.ncl=tibble(ensembl_gene_id=temp_normal$ensembl_gene_id, entrezgene=temp_normal$entrezgene, p.1=temp_random.ncl$`Class 1`)
+
+  
+for (i in 2:nrow(perm.matrix)){
+  results_lca=lca_perm(macs_gene_lists, homer_gene_lists, thor_gene_lists, bcp_gene_lists, music_gene_lists, perm.matrix[i,])
+
+    if(is.logical(results_lca$normal)){
+  temp_normal=(results_lca$overlap) %>%
+    cbind(p=NA) %>%
+    dplyr::select(ensembl_gene_id, entrezgene, p)
+  post_normal=left_join(post_normal, temp_normal, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))   
+  } else{
+  temp_normal=(results_lca$overlap) %>%
+    left_join(postClassProbs(results_lca$normal)) %>%
+    dplyr::select(ensembl_gene_id, entrezgene, p=`Class 1`)
+  post_normal=left_join(post_normal, temp_normal, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))
+  }
+ 
+  if(is.logical(results_lca$random.cl)){
+  temp_normal=(results_lca$overlap) %>%
+    cbind(p=NA) %>%
+    dplyr::select(ensembl_gene_id, entrezgene, p)
+  post_random.cl=left_join(post_random.cl, temp_normal, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))   
+  } else{
+  temp_random.cl=(results_lca$overlap) %>%
+    left_join(postClassProbs(results_lca$random.cl)) %>%
+    dplyr::select(ensembl_gene_id, entrezgene, p=`Class 1`)
+  post_random.cl=left_join(post_random.cl, temp_random.cl, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))
+  }
+   
+  if(is.logical(results_lca$random.ncl)){
+  temp_normal=(results_lca$overlap) %>%
+    cbind(p=NA) %>%
+    dplyr::select(ensembl_gene_id, entrezgene, p)
+  post_random.ncl=left_join(post_random.ncl, temp_normal, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))   
+  } else{
+     temp_random.ncl=(results_lca$overlap) %>%
+    left_join(postClassProbs(results_lca$random.ncl)) %>%
+    dplyr::select(ensembl_gene_id, entrezgene, p=`Class 1`)
+  post_random.ncl=left_join(post_random.ncl, temp_random.ncl, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))
+  }
+}
+
+
+
+# results_lca=lca_perm(macs_gene_lists, homer_gene_lists, thor_gene_lists, bcp_gene_lists, music_gene_lists, perm.matrix[161,])
+# i=161
+# if(is.logical(results_lca$random.cl)){
+#   temp_normal=(results_lca$overlap) %>%
+#     cbind(p=NA) %>%
+#     dplyr::select(ensembl_gene_id, entrezgene, p)
+#   post_random.cl=left_join(post_random.cl, temp_normal, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))   
+#   } else{
+#   temp_random.cl=(results_lca$overlap) %>%
+#     left_join(postClassProbs(results_lca$random.cl)) %>%
+#     dplyr::select(ensembl_gene_id, entrezgene, p=`Class 1`)
+#   post_random.cl=left_join(post_random.cl, temp_random.cl, by=c("ensembl_gene_id", "entrezgene"), suffix=c("",as.character(i) ))
+#   } Typo
+
+
+
+
+
+
+for(i in 4:ncol(post_normal)) if(is.na(post_normal[1,i])==F & cor(post_normal[,i],post_normal[,3])<0) post_normal[,i]=1-post_normal[,i]
+for(i in 4:ncol(post_random.cl)) if(is.na(post_random.cl[1,i])==F & cor(post_random.cl[,i],post_random.cl[,3])<0) post_random.cl[,i]=1-post_random.cl[,i]
+for(i in 4:ncol(post_random.ncl)) if(is.na(post_random.ncl[1,i])==F & cor(post_random.ncl[,i],post_random.ncl[,3])<0) post_random.ncl[,i]=1-post_random.ncl[,i]
+
+
+
+#save(post_normal, post_random.cl, post_random.ncl, file="~/Documents/Aim_2/homo_sapiens_neutrophil/average_thresholds_posterior_probs_mar2016")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/average_thresholds_posterior_probs_mar2016")
+```
+
+```{r}
+post_normal
+(post_random.cl)
+post_random.ncl
+
+#post_random.cl=(post_random.cl[,c(1:162, 245, 163:244)]) # because there was a typo the first time
+
+all.equal(colnames(post_random.cl), colnames(post_random.ncl))
+all.equal(colnames(post_random.ncl), colnames(post_normal))
+
+  ncol(post_random.cl)
+
+
+for(i in 3:ncol(post_normal)) if(is.na(post_random.cl[1,i])==F & cor(post_normal[,i],post_random.cl[,i])<0) post_normal[,i]=1-post_normal[,i]
+for(i in 3:ncol(post_random.ncl)) if(is.na(post_random.cl[1,i])==F & is.na(post_random.ncl[1,i])==F & cor(post_random.ncl[,i],post_random.cl[,i])<0) post_random.ncl[,i]=1-post_random.ncl[,i]
+
+
+```
+
+
+```{r}
+posterior_normal.ave=rowMeans(post_normal[,-1:-2], na.rm = T)
+posterior_random.cl.ave=rowMeans(post_random.cl[,-1:-2], na.rm = T)
+posterior_random.ncl.ave=rowMeans(post_random.ncl[,-1:-2], na.rm = T)
+
+library(matrixStats)
+posterior_normal.sd=rowSds(as.matrix(post_normal[,-1:-2]), na.rm = T)
+posterior_random.cl.sd=rowSds(as.matrix(post_random.cl[,-1:-2]), na.rm=T)
+posterior_random.ncl.sd=rowSds(as.matrix(post_random.ncl[,-1:-2]), na.rm=T)
+
+post_normal_average=add_column(post_normal, average=posterior_normal.ave) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, average) %>%
+  add_column(posterior_normal.sd)
+
+post_random.cl_average=add_column(post_random.cl, average=posterior_random.cl.ave) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, average) %>%
+  add_column(posterior_random.cl.sd)
+
+post_random.ncl_average=add_column(post_random.ncl, average=posterior_random.ncl.ave) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, average) %>%
+  add_column(posterior_random.ncl.sd)
+
+
+cor(cbind(post_normal_average$average, post_random.cl_average$average, post_random.ncl_average$average))
+```
+
+
+```{r}
+post_plot=(post_normal_average) %>%
+  #left_join(overlap, by=c("ensembl_gene_id", "entrezgene")) %>%
+  dplyr::rename(regular_lca=average) %>% #regular_sd=posterior_normal.sd) %>%
+  add_column(random_contLoad_lca=post_random.cl_average$average, random_NoncontLoad_lca=post_random.ncl_average$average, index=1:nrow(post_normal)) %>%
+  gather(key=method, value=mean, regular_lca, random_contLoad_lca, random_NoncontLoad_lca)  %>%
+  mutate(mean=1-mean)
+
+max(filter(post_plot, method=="LCRE(Non-Constant Loading)")$mean)
+
+post_plot$method=recode(post_plot$method, regular_lca="LCA", random_contLoad_lca="LCRE(Constant Loading)", random_NoncontLoad_lca="LCRE(Non-Constant Loading)")
+#  add_column(index=1:nrow(post_normal_average), random_contLoad_sd=post_random.cl_average$posterior_random.cl.sd, random_NoncontLoad_sd=post_random.ncl_average$posterior_random.ncl.sd )
+
+```
+### Simple Vote Counting
+
+```{r}
+  overlap=tibble(ensembl_gene_id=egs$ensembl_gene_id, entrezgene=egs$entrezgene) %>%
+  left_join(., macs_gene_lists[[5]], suffix=c("","_macs")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs=log10pval) %>%
+  left_join(., homer_gene_lists[[5]], suffix=c("", "homer")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene,macs, homer=Score) %>%
+  left_join(., thor_gene_lists[[5]], suffix=c("", "thor")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs, homer, thor=score) %>%
+  left_join(., bcp_gene_lists[[5]], suffix=c("", "bcp")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene,macs, homer, thor, bcp=Score) %>%
+  left_join(., music_gene_lists[[5]], suffix=c("", "music")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene, macs, homer, thor, bcp, music=Score)
+
+  overlap$macs=recode(overlap$macs, .missing=0, .default=1)
+  overlap$homer=recode(overlap$homer, .missing=0, .default=1)
+  overlap$thor=recode(overlap$thor, .missing=0, .default=1)
+  overlap$bcp=recode(overlap$bcp, .missing=0, .default=1)
+  overlap$music=recode(overlap$music, .missing=0, .default=1)
+  overlap    
+  
+  vote_counts=overlap %>%
+    dplyr::mutate(votes=(macs+homer+thor+bcp+music)/5)
+  
+  
+```
+
+
+```{r}
+post_plot_sd=(post_normal_average) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, posterior_normal.sd) %>%
+  dplyr::rename(regular_lca=posterior_normal.sd) %>%
+  add_column(random_contLoad_lca=post_random.cl_average$posterior_random.cl.sd, random_NoncontLoad_lca=post_random.ncl_average$posterior_random.ncl.sd, index=1:nrow(post_normal_average)) %>%
+  gather(key=method, value=sd, regular_lca, random_contLoad_lca, random_NoncontLoad_lca) 
+
+post_plot_sd$method=recode(post_plot_sd$method, regular_lca="LCA", random_contLoad_lca="LCRE(Constant Loading)", random_NoncontLoad_lca="LCRE(Non-Constant Loading)")
+
+
+boxplot=add_column(post_normal_average[,1:3], lca="regular") %>%
+  rbind(add_column(post_random.cl_average[,1:3], lca="random_contload")) %>%
+  rbind(add_column(post_random.ncl_average[,1:3], lca="random_noncontload"))
+
+
+
+
+ggplot(post_plot, aes(x= index, y=mean, fill=method)) + 
+  geom_violin() +
+  labs(y="Average Posterior Probability for LCRE", fill="Method") +
+  theme_bw()+
+  ylim(0,1)+
+  theme(axis.title.x = element_blank(),   axis.text.x = element_blank(),  axis.ticks = element_blank())+
+  scale_fill_brewer(palette="Dark2") 
+  #geom_hline(yintercept=0)+
+  #ylim(0,1) +
+#  geom_abline()+
+  #xlim(0,1)+
+  # ggsave("Average_posterior_probability_H3K36me3_thresholds_violinplot.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+post_normal_compare=(post_normal_average) %>%
+  dplyr::rename(regular_lca=average) %>% #regular_sd=posterior_normal.sd) %>%
+  add_column(random_contLoad_lca=post_random.cl_average$average, random_NoncontLoad_lca=post_random.ncl_average$average, index=1:nrow(post_normal)) %>%
+  mutate(regular_lca=1-regular_lca, random_contLoad_lca=1-random_contLoad_lca, random_NoncontLoad_lca=1-random_NoncontLoad_lca)
+max(post_normal_compare$random_contLoad_lca)
+
+save(post_normal_compare, file="~/Documents/Aim_2/homo_sapiens_neutrophil/lca_peak_thresholds_post_probs")
+
+
+a=ggplot(post_normal_compare, aes(x=regular_lca, y=random_contLoad_lca)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Average Posterior Probabilities for LCA", y="Average Posterior Probabilities\n for LCRE (CL)")+
+  geom_abline(aes(intercept=0, slope=1))
+
+b=ggplot(post_normal_compare, aes(x=regular_lca, y=random_NoncontLoad_lca)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Average Posterior Probabilities for LCA", y="Average Posterior Probabilities\n for LCRE (NCL)")+
+  geom_abline(aes(intercept=0, slope=1))
+
+c=ggplot(post_normal_compare, aes(x=random_NoncontLoad_lca, y=random_contLoad_lca)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Average Posterior Probabilities for LCRE (NCL)", y="Average Posterior Probabilities\n for LCRE (CL)")+
+  geom_abline(aes(intercept=0, slope=1))
+  
+
+
+library(gridExtra)
+
+fig=grid.arrange(a,c,b, ncol=2, layout_matrix=rbind(c(1,2),
+                                                c(3, 4)))
+ggsave("Average_posterior_probability_pairs.jpeg",plot=fig, path="~/Documents/Thesis/Images/", device="jpeg", width=8, height=8)
+
+
+pairs(av_plot[,1:3])
+
+grid_arrange_shared_legend <- function(..., ncol = length(list(...)), nrow = 1, position = c("bottom", "right")) {
+  
+  plots <- list(...)
+  position <- match.arg(position)
+  g <- ggplotGrob(plots[[1]] + theme(legend.position = position))$grobs
+  legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+  lheight <- sum(legend$height)
+  lwidth <- sum(legend$width)
+  gl <- lapply(plots, function(x) x + theme(legend.position="none"))
+  gl <- c(gl, ncol = ncol, nrow = nrow)
+  
+  combined <- switch(position,
+                     "bottom" = arrangeGrob(do.call(arrangeGrob, gl),
+                                            legend,
+                                            ncol = 1,
+                                            heights = unit.c(unit(1, "npc") - lheight, lheight)),
+                     "right" = arrangeGrob(do.call(arrangeGrob, gl),
+                                           legend,
+                                           ncol = 2,
+                                           widths = unit.c(unit(1, "npc") - lwidth, lwidth)))
+  
+  grid.newpage()
+  grid.draw(combined)
+  
+  # return gtable invisibly
+  invisible(combined)
+  
+}
+library(ggplot2)
+library(gridExtra)
+library(grid)
+fig=grid_arrange_shared_legend(a,b,c , ncol = 2, nrow = 2, position="bottom") 
+ggsave("Average_posterior_probability_pairs",plot=fig, path="~/Documents/Thesis/Images/", device="jpeg", width=8, height=8)
+
+  # theme(axis.title.y = element_blank(),   axis.text.y = element_blank(),  axis.ticks = element_blank())+
+  #guides(colour="none")+
+  #theme(axis.title.x = element_blank(),   axis.text.x = element_blank(),  axis.ticks = element_blank())+
+  #facet_grid(~sigma.z) +
+#  labs(colour = "Preferred Model by BIC")+
+#  scale_colour_brewer(palette="Set1")
+#  
+
+post_normal_sum_compare=(post_normal_average) %>%
+  dplyr::rename(regular_lca=average) %>% #regular_sd=posterior_normal.sd) %>%
+  add_column(sum_scores=vote_counts$votes, index=1:nrow(post_normal)) %>%
+   mutate(regular_lca=1-regular_lca)
+
+
+ggplot(post_normal_sum_compare, aes(x=regular_lca, y=sum_scores)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Average Posterior Probabilities for LCA", y="Sum of Scores for Default Threshold")+
+  geom_abline(aes(intercept=0, slope=1))+
+  ggsave("Average_posterior_LCAVSumScores_probability.jpeg",plot=fig, path="~/Documents/Thesis/thesis_finale/Images/", device="jpeg", width=8, height=8)
+
+
+```
+
+
+```{r}
+  
+ggplot(boxplot, aes(lca, alsoaverage)) + 
+  geom_boxplot() +
+  labs(x="Model Type", y="Average Posterior Probabilityu") +
+  theme_bw()+
+  scale_x_discrete(labels=c("LCA","LCRE"))
+
+
+
+ggplot(post_plot_sd, aes(y=sd, colour=method)) + 
+  geom_boxplot() +
+  labs(y="Standard Deviation of Posterior Probability for LCRE", colour="Method") +
+  theme_bw()+
+    theme(axis.title.x = element_blank(),   axis.text.x = element_blank(),  axis.ticks = element_blank())+
+scale_colour_brewer(palette="Dark2")+
+  #geom_abline()+
+  ggsave("Sd_posterior_probability_H3K36me3_thresholds.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+cor(post_plot$regular_lca, post_plot$random_lca)
+
+
+```
+
+```{r}
+binding_rows_random.cl=filter(post_plot, method=="LCRE(Constant Loading)" & mean>0.5)
+#5274 genes
+binding_rows_random.ncl=filter(post_plot, method=="LCRE(Non-Constant Loading)" & mean>0.5)
+
+binding_rows_regular=filter(post_plot, method=="LCA" & mean>0.5)
+
+save(binding_rows_regular, binding_rows_random.cl, binding_rows_random.ncl, file="~/Documents/Aim_2/homo_sapiens_neutrophil/lca_peak_thresholds_binding_rows")
+
+
+# save(binding_rows_regular, file="~/Documents/Aim_2/homo_sapiens_neutrophil/LCA_peak_thresholds_average_LCA_genelist")
+
+common_genes_regular_random.cl=inner_join(binding_rows_random.cl, binding_rows_regular, by=c("ensembl_gene_id", "entrezgene")) %>%
+  dplyr::select(ensembl_gene_id, entrezgene)
+
+common_genes_regular_random.ncl=inner_join(binding_rows_random.ncl, binding_rows_regular, by=c("ensembl_gene_id", "entrezgene")) %>%
+  dplyr::select(ensembl_gene_id, entrezgene)
+
+common_genes_random.ncl_random.cl=inner_join(binding_rows_random.cl, binding_rows_random.ncl, by=c("ensembl_gene_id", "entrezgene")) %>%
+  dplyr::select(ensembl_gene_id, entrezgene)
+
+
+post_plot_by_method=post_normal_average %>%
+  dplyr::rename("regular_mean"=average," regular_sd"=posterior_normal.sd) %>%
+  add_column(random.cl_mean=post_random.cl_average$average, random.cl_sd=post_random.cl_average$posterior_random.cl.sd,
+             random.ncl_mean=post_random.ncl_average$average, random.ncl_sd=post_random.ncl_average$posterior_random.ncl.sd)
+  
+post_plot_binding=post_plot_by_method %>%
+  dplyr::select(ensembl_gene_id, entrezgene, regular_mean, random.cl_mean, random.ncl_mean ) %>%
+    mutate(regular_binding=as.factor(ifelse(regular_mean>0.5, 1, 0))) %>%
+  mutate(random.cl_binding=as.factor(ifelse( random.cl_mean>0.5, 1, 0))) %>%
+  mutate(random.ncl_binding=as.factor(ifelse(random.ncl_mean>0.5, 1, 0))) %>%
+  group_by(regular_binding, random.cl_binding, random.ncl_binding) %>%
+  summarise(freq=n())
+
+jpeg(file="~/Documents/Thesis/Images/LCAvLCRE_H3K36me3_threshold.jpeg")
+upset(fromList(list(LCRE.CL=binding_rows_random.cl$entrezgene, LCA=binding_rows_regular$entrezgene, LCRE.NCL=binding_rows_random.ncl$entrezgene)))
+dev.off()
+library(VennDiagram)
+venn.diagram(list())
+
+
+venn=venn.diagram(list(LCA=binding_rows_regular$entrezgene, LCRE.CL=binding_rows_random.cl$entrezgene, LCRE.NCL=binding_rows_random.ncl$entrezgene),
+             filename=NULL,
+             fill=cols,
+             category.names = c( "LCA", "LCRE (CL)", "LCRE (no CL)"),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.pos=c(320, 40, 1),
+             margin=0.08,
+             cat.dist=(0.08))
+jpeg("~/Documents/Thesis/Images/LCAvsLCREDataVenn_avthresholds.jpeg")
+grid.draw(venn)
+dev.off()
+
+library(RColorBrewer)
+cols=brewer.pal(n=3, name="Dark2")
+
+overlap=tibble(ensembl_gene_id=egs$ensembl_gene_id, entrezgene=egs$entrezgene) %>%
+  left_join(., macs_gene_lists[[1]], suffix=c("","_macs")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs=log10pval) %>%
+  left_join(., homer_gene_lists[[2]], suffix=c("", "homer")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene,macs, homer=Score) %>%
+  left_join(., thor_gene_lists[[3]], suffix=c("", "thor")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs, homer, thor=score) %>%
+  left_join(., bcp_gene_lists[[4]], suffix=c("", "bcp")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene,macs, homer, thor, bcp=Score) %>%
+  left_join(., music_gene_lists[[5]], suffix=c("", "music")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene, macs, homer, thor, bcp, music=Score)
+
+
+  overlap$macs=recode(overlap$macs, .missing=0, .default=1)
+  overlap$homer=recode(overlap$homer, .missing=0, .default=1)
+  overlap$thor=recode(overlap$thor, .missing=0, .default=1)
+  overlap$bcp=recode(overlap$bcp, .missing=0, .default=1)
+  overlap$music=recode(overlap$music, .missing=0, .default=1)
+  overlap  
+```
+
+```{r}
+binding_genes_sum_scores=filter(vote_counts, votes>0.5)
+cols=brewer.pal(n=2, name="Accent")
+
+
+
+venn=venn.diagram(list(LCA=binding_rows_regular$entrezgene, Sum_scores=binding_genes_sum_scores$entrezgene),
+             filename=NULL,
+             fill=cols[1:2],
+             category.names = c( "LCA", "Sum of Scores"),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.pos=c(320, 1),
+                          ext.percent=c(1,1,0.1),
+             margin=0.08,
+             cat.dist=(0.08))
+
+
+jpeg("~/Documents/Thesis/thesis_finale/Images/LCAvsSumScores.jpeg")
+grid.draw(venn)
+dev.off()
+
+```
+
+```{r}
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+class_2=binding_rows_regular
+
+
+gene.df=bitr(egs$entrezgene, fromType = "ENTREZID",
+             toType=c("ENSEMBL", "SYMBOL"),
+             OrgDb= org.Hs.eg.db)
+
+interesting_gene.df <- bitr(class_2$entrezgene, fromType = "ENTREZID",
+        toType = c("ENSEMBL", "SYMBOL"),
+        OrgDb = org.Hs.eg.db)
+
+ggo=groupGO(gene = interesting_gene.df$ENTREZID,
+            OrgDb =org.Hs.eg.db,
+            ont="MF",
+            level=3,
+            readable=TRUE)
+
+barplot(ggo, drop=TRUE, showCategory=12)
+
+ego= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+
+#ego_2= enrichGO(gene=interesting_gene.df$ENTREZID,
+              # keyType = "ENTREZID",
+              # OrgDb = org.Hs.eg.db,
+              # ont ="MF",
+              # pAdjustMethod = "BH",
+              # pvalueCutoff = 0.01,
+              # qvalueCutoff = 0.05,
+              # readable=TRUE)
+library(viridis)
+barplot(ego)+ scale_color_viridis()
+
+
+clusterProfiler::dotplot(gofilter(ego))+ scale_color_viridis()+ggsave("H3K36me3_GO_terms_regular_LCA_thresholds.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=8, dpi="retina")
+
+
+gofilter(ego)
+
+```
+## Compare fixed and average thresholds
+
+```{r}
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/LCA_peak_thresholds_average_LCA_genelist")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/LCA_random_programs_simple_LCA_genelists")
+
+
+fixed_threshold_genes=binding_genes_lca
+
+average_threshold_genes=binding_rows_regular
+cols=brewer.pal(n=2, name="Set1")
+venn=venn.diagram(list(Average_Threshold=average_threshold_genes$entrezgene, Fixed_Threshold=fixed_threshold_genes$entrezgene),
+             filename=NULL,
+             fill=cols[1:2],
+             category.names = c( "Average Threshold", "Fixed Threshold"),
+             cat.cex=1.5,
+             cex=1.5,
+             ext.percent=c(1,1,0.1),
+             # cat.pos=c(90, 180),
+             margin=0.08,
+             cat.dist=(0.08))
+jpeg("~/Documents/Thesis/thesis_finale/Images/LCAvsLCA_FixAv_Venn.jpeg")
+grid.draw(venn)
+dev.off()
+
+
+venn=venn.diagram(list(Sum_Scores=binding_genes_sum_scores$entrezgene, Fixed_Threshold=fixed_threshold_genes$entrezgene),
+             filename=NULL,
+             fill=cols[1:2],
+             category.names = c( "Sum of Scores", "Fixed Threshold"),
+             cat.cex=1.5,
+             cex=1.5,
+             ext.percent=c(1,1,0.1),
+             # cat.pos=c(90, 180),
+             margin=0.08,
+             cat.dist=(0.08))
+jpeg("~/Documents/Thesis/thesis_finale/Images/FixedLCAvsSumScores.jpeg")
+grid.draw(venn)
+dev.off()
+egs
+```
+

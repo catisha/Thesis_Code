@@ -1,0 +1,283 @@
+---
+title: "Analysis of homer output"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+Analysis of the homer output in R for ChIP-seq data for p300 on human cells at times 0 and 30. There were two replicates at time 30. Data was aligned to human genome hg38 using BWA and subsequently filtered (see *process_alignments.sh* in *~/Documents/Aim_2/Ramos_2010/p300*). Only looking at chromosome 21 for now.   
+
+Version and full command used can be found in file: 
+
+
+Download the neccessary packages:
+```{r}
+library(tidyverse)
+library(readr)
+
+library(GenomicRanges)
+library(rtracklayer)
+```
+
+Download the data:
+
+```{r}
+homer_peaks<- read_delim("H3K36me3_homer_results", 
+    "\t", escape_double = FALSE, col_names = FALSE, 
+    comment = "#", trim_ws = TRUE)
+
+
+```
+
+
+```{r}
+nrow(homer_peaks)
+```
+
+```{r}
+homer=tibble(Start=homer_peaks$X3,Stop=homer_peaks$X4, Chrom=homer_peaks$X2, count=homer_peaks$X6, score=homer_peaks$X12)
+
+plot(homer$score)
+
+homer_event=GRanges(
+  seqnames=Rle(homer$Chrom),
+  ranges = IRanges(homer$Start, end=homer$Stop, names=seq(length(homer$Start))),
+  strand=Rle(strand('*'), c(nrow(homer))),
+  score=homer$score)
+
+
+```
+
+
+# Genes overlapping with enriched regions
+
+I create a list of genes with attributes that are found in chromosome 21. 
+
+```{r}
+    
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/mar2016egs")
+x=replace(egs$chromosome_name, list=which(egs$chromosome_name=="MT"), values=c("M"))
+x["MT"]
+
+
+egs$chromosome_name=x
+
+filter(egs, chromosome_name=="M")
+```
+
+And converted this to a Granges object. 
+
+```{r}
+gene_regions = 
+  GRanges(seqnames = paste0("chr",Rle(egs$chromosome_name )),
+          ranges = IRanges( start = egs$start_position,
+                            end = egs$end_position ),
+          strand = Rle( rep("*", nrow(egs)) ),
+          gene = egs$ensembl_gene_id,
+          entrez=egs$entrezgene)
+head(gene_regions)
+```
+
+
+
+
+# Creating gene/promoter lists for comparison with ranciati code
+
+I want to create a list to compare to the list generated from the macs2 peaks and similar programs. 
+
+I decided to be as broad as possible, and will include a regions $\plus 200$bp around the start of the gene to cover the promoter region, as well as the rest of the gene. 
+
+```{r}
+
+egs$TSS = ifelse( egs$strand == "1", egs$start_position, egs$end_position )
+
+#ifelse( egs$stand == "1", egs$TSS-200, egs$start_position)
+
+head(egs)
+gene_regions
+gene_promoter_regions = 
+  GRanges(seqnames = Rle( paste0("chr",egs$chromosome_name) ),
+          ranges = IRanges( 
+            start=ifelse( egs$strand == "1", egs$TSS-200, egs$start_position),          
+            end=ifelse(egs$strand == "-1", egs$TSS+200, egs$end_position)),
+          strand = Rle( rep("*", nrow(egs)) ),
+          gene = egs$ensembl_gene_id)
+gene_promoter_regions
+```
+
+Get 3 gene lists, overlaps only in T0, overlaps only in T30, overlaps in both. Removed multiple hits on the same gene. 
+
+
+```{r}
+ovlp3_gene_promoter = findOverlaps(gene_promoter_regions, homer_event )
+
+#T0_gene_promoter=gene_promoter_regions[to(ovlp3_T0_gene_promoter)]
+#T30_gene_promoter=gene_promoter_regions[to(ovlp3_T30_gene_promoter)]
+
+
+genes_promoter=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter ) ),]) %>%
+  add_column(score=homer_event[to(ovlp3_gene_promoter)]$score) %>% 
+  group_by(entrezgene) %>%
+  filter(score==max(score)) %>%
+  distinct()
+  
+  
+hist(as.numeric(genes_promoter$chromosome_name))
+
+```
+
+
+
+
+
+
+
+Save as a list
+
+```{r}
+
+homer_gene_lists=list(genes_promoter=genes_promoter)
+
+save(homer_gene_lists, file="homer_coding_gene_lists_with_threshold_mar2016")
+
+```
+
+
+# Changing Thresholds
+
+```{r}
+homer_arranged=arrange(homer, (score)) %>%
+  dplyr::rename(Score=score)
+
+
+get_threshold_gene_lists=function(macs_arranged, n_500, n_1000, n_2000, n_4000, n_10000, maximum){
+    macs_top_10000=macs_arranged[1:(nrow(macs_arranged)/n_10000),]
+    macs_top_5000=macs_arranged[1:(nrow(macs_arranged)/n_4000),]
+    macs_top_2000=macs_arranged[1:(nrow(macs_arranged)/n_2000),]
+    macs_top_1000=macs_arranged[1:(nrow(macs_arranged)/n_1000),]
+    macs_top_500=macs_arranged[1:(nrow(macs_arranged)/n_500),] 
+  
+    macs_top_10000_event=GRanges(
+      seqnames=Rle(macs_top_10000$Chrom),
+      ranges = IRanges(macs_top_10000$Start, end=macs_top_10000$Stop, names=seq(length(macs_top_10000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_10000))),
+      Score=macs_top_10000$Score)
+    
+    
+    macs_top_5000_event=GRanges(
+      seqnames=Rle(macs_top_5000$Chrom),
+      ranges = IRanges(macs_top_5000$Start, end=macs_top_5000$Stop, names=seq(length(macs_top_5000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_5000))),
+      Score=macs_top_5000$Score)
+    
+    
+    macs_top_2000_event=GRanges(
+      seqnames=Rle(macs_top_2000$Chrom),
+      ranges = IRanges(macs_top_2000$Start, end=macs_top_2000$Stop, names=seq(length(macs_top_2000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_2000))),
+      Score=macs_top_2000$Score)
+    
+    
+    macs_top_1000_event=GRanges(
+      seqnames=Rle(macs_top_1000$Chrom),
+      ranges = IRanges(macs_top_1000$Start, end=macs_top_1000$Stop, names=seq(length(macs_top_1000$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_1000))),
+      Score=macs_top_1000$Score)
+  
+
+    macs_top_500_event=GRanges(
+      seqnames=Rle(macs_top_500$Chrom),
+      ranges = IRanges(macs_top_500$Start, end=macs_top_500$Stop, names=seq(length(macs_top_500$Start))),
+      strand=Rle(strand('*'), c(nrow(macs_top_500))),
+      Score=macs_top_500$Score)
+  
+      
+    ovlp3_gene_promoter_10000 = findOverlaps(gene_promoter_regions, macs_top_10000_event )
+    ovlp3_gene_promoter_5000 = findOverlaps(gene_promoter_regions, macs_top_5000_event )
+    ovlp3_gene_promoter_2000 = findOverlaps(gene_promoter_regions, macs_top_2000_event )
+    ovlp3_gene_promoter_1000 = findOverlaps(gene_promoter_regions, macs_top_1000_event )
+    ovlp3_gene_promoter_500 = findOverlaps(gene_promoter_regions, macs_top_500_event )
+
+    #T0_gene_promoter=gene_promoter_regions[to(ovlp3_T0_gene_promoter)]
+    #T30_gene_promoter=gene_promoter_regions[to(ovlp3_T30_gene_promoter)]
+    
+    genes_promoter_500=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_500 ) ),]) %>%
+      add_column(Score=macs_top_500_event[to(ovlp3_gene_promoter_500)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==min(Score))   %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    genes_promoter_1000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_1000 ) ),]) %>%
+        add_column(Score=macs_top_1000_event[to(ovlp3_gene_promoter_1000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==min(Score))   %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    
+    genes_promoter_2000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_2000 ) ),]) %>%
+        add_column(Score=macs_top_2000_event[to(ovlp3_gene_promoter_2000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==min(Score)) %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    genes_promoter_4000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_5000 ) ),]) %>%
+        add_column(Score=macs_top_5000_event[to(ovlp3_gene_promoter_5000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==min(Score)) %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    genes_promoter_10000=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter_10000 ) ),]) %>%
+        add_column(Score=macs_top_10000_event[to(ovlp3_gene_promoter_10000)]$Score) %>% 
+      group_by(entrezgene) %>%
+      filter(Score==min(Score)) %>%
+      distinct() %>%
+      ungroup() %>%
+      arrange(Score)
+    
+    return(list(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_10000))
+
+}
+
+
+
+homer_threshold_genes=get_threshold_gene_lists(macs_arranged = homer_arranged, n_500= 96.6, n_1000 = 45.4, n_2000 = 19.82,n_4000 =  7.62, n_10000 = 1)
+
+6619/3
+
+
+
+
+# macs_event_all_pvalues=GRanges(
+  # seqnames=Rle(macs_all_pvalues$Chrom),
+  # ranges = IRanges(macs_all_pvalues$Start, end=macs_all_pvalues$Stop, names=seq(length(macs_all_pvalues$Start))),
+  # strand=Rle(strand('*'), c(nrow(macs_all_pvalues))),
+  # log10pval=macs_all_pvalues$log10pval)
+```
+
+
+```{r}
+
+genes_promoter_500=homer_threshold_genes[[1]]
+genes_promoter_1000=homer_threshold_genes[[2]]
+genes_promoter_2000=homer_threshold_genes[[3]]
+genes_promoter_4000=homer_threshold_genes[[4]]
+genes_promoter_all=homer_threshold_genes[[5]]
+
+plot(genes_promoter_all$Score, col="red", type="l")+
+  points(genes_promoter_4000$Score, col="blue", type="l")+
+  points(genes_promoter_2000$Score, col="green", type="l")+
+  points(genes_promoter_1000$Score, col="orange", type="l")+
+  points(genes_promoter_500$Score, col="pink", type="l")
+
+upset(fromList(list(top_500=genes_promoter_500$entrezgene, top_1000=genes_promoter_1000$entrezgene, top_2000=genes_promoter_2000$entrezgene, top_4000=genes_promoter_4000$entrezgene, all=genes_promoter_all$entrezgene)))
+
+save(genes_promoter_500, genes_promoter_1000, genes_promoter_2000, genes_promoter_4000, genes_promoter_all, file="~/Documents/Aim_2/homo_sapiens_neutrophil/HOMER_analysis/homer_4_thresholds_genes_mar2016")
+
+```

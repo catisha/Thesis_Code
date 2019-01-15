@@ -1,0 +1,314 @@
+---
+title: "Analysis of enRich output"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+Analysis of the enRich output in R for ChIP-seq data for p300 on human cells at times 0 and 30. There were two replicates at time 30. Data was aligned to human genome hg38 using BWA and subsequently filtered (see *process_alignments.sh* in *~/Documents/Aim_2/Ramos_2010/p300*). Only looking at chromosome 21 for now.   
+
+Version and full command used can be found in file: 
+
+Download the neccessary packages:
+```{r}
+library(tidyverse)
+library(readr)
+
+library(GenomicRanges)
+library(rtracklayer)
+
+library(Gviz)
+library(biomaRt)
+
+```
+
+Download the data:
+
+```{r}
+load("combined_enRich_data")
+
+```
+
+
+```{r}
+nrow(enRich_data)
+```
+
+```{r}
+enRich=tibble(Start=enRich_data$Start,Stop=enRich_data$Stop, Chrom=enRich_data$Chromosome, post_prob=enRich_data$poster.prob.diff)
+
+enRich=filter(enRich, post_prob>0.9)
+
+enRich_event=GRanges(
+  seqnames=Rle(enRich$Chrom),
+  ranges = IRanges(enRich$Start, end=enRich$Stop, names=seq(length(enRich$Start))),
+  strand=Rle(strand('*'), c(nrow(enRich))),
+  score=enRich$post_prob)
+
+
+```
+
+
+
+# Visualisation with Gviz
+
+I loaded the Gviz library and the biomaRt library. 
+
+I created a biomaRt object from ensembl containing the annotations for the human genome. I made sure that I had the correct version of the human genome (hg18). 
+
+This was used to generated gene model data for the region of interest on chromosome 21.
+
+
+```{r}
+#Older version of human genome
+#mart=useMart("ensembl",
+#             dataset = "hsapiens_gene_ensembl",
+#             host="may2009.archive.ensembl.org")
+
+mart=useMart(biomart="ENSEMBL_MART_ENSEMBL",dataset="hsapiens_gene_ensembl", host="www.ensembl.org" ) # , dataset='hsapiens_gene_ensembl', host="www.ensembl.org")
+
+
+fm= Gviz:::.getBMFeatureMap()
+#fm["symbol"]="external_gene_id"
+
+bm= BiomartGeneRegionTrack(chromosome='chr21',
+                        genome='hg38',
+                        start=filter(enRich, Chrom=="chr21")$Start[1], 
+                        end= tail(filter(enRich, Chrom=="chr21")$Start),
+                        biomart=mart,
+                      collapseTranscripts="longest",
+                        featureMap=fm)
+
+AT=GenomeAxisTrack()
+
+
+
+```
+
+
+
+I confirmed this would create a gene track. 
+
+```{r}
+length(enRich$Start)
+plotTracks(c(bm, AT),
+           from=filter(enRich, Chrom=="chr21")$Start[1], 
+           to=filter(enRich, Chrom=="chr21")$Start[100],
+           transcriptAnnotation="symbol", window="auto", 
+           cex.title=1, fontsize=10 )
+
+
+#biocLite("TxDb.Hsapiens.UCSC.hg18.knownGene")
+#library(TxDb.Hsapiens.UCSC.hg18.knownGene)
+#hg18_anno=TxDb.Hsapiens.UCSC.hg18.knownGene
+
+#library("GenomicFeatures")
+#seqlevels(hg18_anno)="chr21"
+
+
+```
+
+
+I added the peaks. 
+```{r}
+enRich_event
+peaks.track = AnnotationTrack(enRich_event[seqnames(enRich_event)=='chr21'], 
+                               genome="hg38", name='Bound',
+                               chromosome='chr21',
+                               stacking="dense",
+                               shape='box',fill='blue3',size=2)
+
+
+
+
+plotTracks(c(peaks.track, bm, AT),           
+          from=filter(enRich, Chrom=="chr21")$Start[1], 
+           to=filter(enRich, Chrom=="chr21")$Start[100],
+          transcriptAnnotation="symbol", window="auto", 
+          type="histogram", cex.title=0.7, fontsize=10 )
+
+
+
+
+```
+
+
+# Genes overlapping with enriched regions
+
+I create a list of genes with attributes that are found in chromosome 21. 
+
+```{r}
+
+# ds = useDataset('hsapiens_gene_ensembl', mart=mart, verbose=TRUE)
+# listDatasets(mart)
+# 
+# chroms=c(seq(1,22), "X", "Y")
+# 
+# # egs = getBM(attributes = c('ensembl_gene_id',
+# #                            'chromosome_name','start_position',
+# #                            'end_position','strand'), 
+# #             filters='chromosome_name',
+# #             values=chroms,
+# #             mart=ds)
+# 
+# egs = getBM(attributes = c('ensembl_gene_id',
+#                            'entrezgene',
+#                            'chromosome_name','start_position',
+#                            'end_position','strand'),
+#             filters='chromosome_name',
+#             values=chroms,
+#             mart=mart) %>%
+#   filter(entrezgene>0)
+    
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/mar2016egs")
+# x=replace(egs$chromosome_name, list=which(egs$chromosome_name=="MT"), values=c("M"))
+# x["MT"]
+# 
+# 
+# egs$chromosome_name=x
+
+#filter(enRich, Chrom=="chrMt")
+```
+
+And converted this to a Granges object. 
+
+```{r}
+gene_regions = 
+  GRanges(seqnames = paste0("chr",Rle(egs$chromosome_name )),
+          ranges = IRanges( start = egs$start_position,
+                            end = egs$end_position ),
+          strand = Rle( rep("*", nrow(egs)) ),
+          gene = egs$ensembl_gene_id,
+          entrez=egs$entrezgene)
+head(gene_regions)
+```
+
+I found the overlap between the enriched regions and the genes. 
+
+```{r}
+ovlp2_gene = findOverlaps(enRich_event,gene_regions )
+
+cat(sprintf( 
+  "%d of %d genes are overlapped by an enriched region at time 0. ",
+             length(unique(subjectHits(ovlp2_gene))), 
+             length(gene_regions))) 
+
+
+
+```
+
+
+I the opposited (overlap between genes and the enriched regions)
+
+```{r}
+
+ovlp2b_gene = findOverlaps( gene_regions, enRich_event)
+
+cat(sprintf( "%d of %d enriched regions overlap a gene. ",
+   length( unique( subjectHits(ovlp2b_gene) ) ), length( enRich_event ) ) )
+
+
+```
+
+Is this a significant overlap? Find the fraction of chromosome 21 covered by genes.
+
+```{r}
+gene_total_length = sum(width(reduce(gene_regions)))
+gene_total_length
+si=Seqinfo(genome="hg38")
+gene_fraction = gene_total_length / sum(as.numeric(seqlengths(si)[1:24]))
+gene_fraction
+```
+
+What is the chance that there would be this much overlap by chance?
+
+```{r}
+binom.test( length( unique( subjectHits( ovlp2b_gene ) ) ), length( enRich_event), gene_fraction )
+
+
+
+
+```
+
+
+What are the genes that are in this overlap?
+```{r}
+pos.gene = as.tibble(egs[ unique( queryHits( findOverlaps( gene_regions, enRich_event) ) ),])
+
+
+```
+
+
+
+
+
+# Creating gene/promoter lists for comparison with ranciati code
+
+I want to create a list to compare to the list generated from the macs2 peaks and similar programs. 
+
+I decided to be as broad as possible, and will include a regions $\plus 200$bp around the start of the gene to cover the promoter region, as well as the rest of the gene. 
+
+```{r}
+
+egs$TSS = ifelse( egs$strand == "1", egs$start_position, egs$end_position )
+
+#ifelse( egs$stand == "1", egs$TSS-200, egs$start_position)
+
+head(egs)
+gene_regions
+gene_promoter_regions = 
+  GRanges(seqnames = Rle( paste0("chr",egs$chromosome_name) ),
+          ranges = IRanges( 
+            start=ifelse( egs$strand == "1", egs$TSS-200, egs$start_position),          
+            end=ifelse(egs$strand == "-1", egs$TSS+200, egs$end_position)),
+          strand = Rle( rep("*", nrow(egs)) ),
+          gene = egs$ensembl_gene_id)
+gene_promoter_regions
+```
+
+Get 3 gene lists, overlaps only in T0, overlaps only in T30, overlaps in both. Removed multiple hits on the same gene. 
+
+
+```{r}
+ovlp3_gene_promoter = findOverlaps(gene_promoter_regions, enRich_event )
+
+#T0_gene_promoter=gene_promoter_regions[to(ovlp3_T0_gene_promoter)]
+#T30_gene_promoter=gene_promoter_regions[to(ovlp3_T30_gene_promoter)]
+
+
+genes_promoter=as.tibble(egs[ ( queryHits( ovlp3_gene_promoter ) ),]) %>%
+    add_column(post_prob=enRich_event[to(ovlp3_gene_promoter)]$score) %>% 
+  group_by(entrezgene) %>%
+  filter(post_prob==max(post_prob)) %>%
+  distinct()
+
+
+hist(as.numeric(genes_promoter$chromosome_name))
+
+```
+
+
+
+
+# GO term analysis
+
+Get EntrezGene identifiers
+
+```{r}
+# attr2get <- c("ensembl_gene_id", "entrezgene")
+# ens2entrez <- getBM(attributes = attr2get, filters = "ensembl_gene_id", values = egs$ensembl_gene_id, mart = mart)
+# head(ens2entrez)
+
+```
+
+
+
+
+Save as a list
+
+```{r}
+
+enRich_gene_lists=list(genes_promoter=genes_promoter)
+
+save(enRich_gene_lists, file="enRich_coding_gene_list_with_threshold_mar2016")
+
+```

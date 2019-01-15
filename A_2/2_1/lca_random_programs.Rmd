@@ -1,0 +1,1385 @@
+---
+title: "lca_random_programs"
+author: "a1667810 Catisha Coburn"
+date: "7 November 2018"
+output: html_document
+---
+
+---
+title: "LCA Test Analysis of ChIP-seq data (Homo sapiens neutrophil H3K36me3)"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+This is a test for using latent class analysis for finding most likely genes based on multiple program analyses. I used the "Ramos 2010" data, specifically looking at p300 on chromosome 21 at times 0 and times 30 (2 replicates). The three programs used for testing were macs2, the ranciati code and homer. I plan to also expand this to at least HOMER.
+
+The following code is based on the R script gene_counts.R 
+
+
+
+```{r setup}
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 50),  # For code
+                      width = 60)  # For output
+
+options(cli.width = 60, tidy=TRUE, width=50)  # For tidyverse loading messages
+```
+
+## Get the data
+
+First I load the necessary libraries and then load the data. 
+
+```{r}
+#save.image("~/Documents/Aim_2/homo_sapiens_neutrophil/random_programs_results.RData")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/random_programs_results.RData")
+
+library(tidyverse)
+library(dplyr)
+library(gplots)
+library(limma)
+library(biomaRt)
+library(rtracklayer)
+
+```
+
+I also check the data looks okay. 
+
+```{r}
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/macs_analysis/macs_coding_gene_lists_mar2016")
+macs_gene_lists
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/THOR_analysis/thor_coding_gene_lists_with_threshold_mar2016")
+thor_gene_lists
+
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/enRich_analysis/enRich_coding_gene_list_with_threshold_mar2016")
+enRich_gene_lists
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/HOMER_analysis/homer_coding_gene_lists_with_threshold_mar2016")
+homer_gene_lists
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/BCP_analysis/bcp_coding_gene_lists_mar2016")
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/MUSIC_analysis/music_coding_gene_lists_mar2016")
+
+program_list=c("macs","HOMER","enRich","THOR","BCP", "MUSIC")
+n_programs=7
+
+
+```
+
+Make a nice table with summary information:
+
+```{r}
+tibble("Peak Caller"=program_list, 
+       "Gene List"=c(nrow(macs_gene_lists$genes_promoter),
+                     nrow(homer_gene_lists$genes_promoter), 
+                     nrow(enRich_gene_lists$genes_promoter), 
+                     nrow(thor_gene_lists$genes_promoter),
+                     nrow(bcp_gene_lists$genes_promoter),
+                     nrow(music_gene_lists$genes_promoter))) 
+#Need to redo with the peaks...maybe in Chapter1?
+
+
+# lengths_macs=tibble(length=abs((macs_gene_lists$genes_promoter$start_position)-(macs_gene_lists$genes_promoter$end_position)), program="macs")
+# lengths_homer=tibble(length=abs((homer_gene_lists$genes_promoter$start_position)-(homer_gene_lists$genes_promoter$end_position)), program="homer")
+# lengths_enRich=tibble(length=abs((enRich_gene_lists$genes_promoter$start_position)-(enRich_gene_lists$genes_promoter$end_position)), program="enRich")
+# lengths_thor=tibble(length=abs((thor_gene_lists$genes_promoter$start_position)-(thor_gene_lists$genes_promoter$end_position)), program="thor")
+# lengths_bcp=tibble(length=abs((bcp_gene_lists$genes_promoter$start_position)-(bcp_gene_lists$genes_promoter$end_position)), program="bcp")
+# lengths_music=tibble(length=abs((music_gene_lists$genes_promoter$start_position)-(music_gene_lists$genes_promoter$end_position)), program="music")
+# 
+# 
+# lengths=rbind(lengths_macs, lengths_homer, lengths_enRich, lengths_thor, lengths_bcp, lengths_music)
+# 
+# ggplot(lengths, aes(x=program, y=length))+
+#   geom_violin()+
+# stat_summary(fun.data="mean_sdl", mult=1, 
+#                  geom="crossbar", width=0.1 )
+```
+
+```{r}
+# top_1000_macs=arrange(macs_gene_lists$genes_promoter, desc(log10pval))[1:1000,]
+# top_1000_enRich=arrange(enRich_gene_lists$genes_promoter, desc(post_prob))[1:1000,]
+# top_1000_HOMER=arrange(homer_gene_lists$genes_promoter, (score))[1:1000,]
+# top_1000_THOR=arrange(thor_gene_lists$genes_promoter, desc(score))[1:1000,]
+# top_1000_BCP=arrange(bcp_gene_lists$genes_promoter, (score))[1:1000,]
+# top_1000_MUSIC=arrange(music_gene_lists$genes_promoter, desc(score))[1:1000,]
+# 
+# upset(fromList(list(
+#   MACS=top_1000_macs$ensembl_gene_id, 
+#   enRich=top_1000_enRich$ensembl_gene_id,
+#   HOMER=top_1000_HOMER$ensembl_gene_id,
+#   THOR=top_1000_THOR$ensembl_gene_id,
+#   BCP=top_1000_BCP$ensembl_gene_id,
+#   MUSIC=top_1000_MUSIC$ensembl_gene_id)),
+#   sets=c("MACS", "enRich", "HOMER", "THOR", "BCP", "MUSIC"),
+#       order.by = "freq",
+#       keep.order = TRUE,
+#       nsets=6,
+#       show.numbers = FALSE,
+#       set_size.angles = 90,
+#       text.scale = 1.5)
+```
+
+
+
+
+## Get intercept list
+
+I obtain lists of intercepts for each gene list. There are 3 gene lists for each program, for T0, T30 and both time points. I used the function venn from the gplots library. This generates both a table with the counts (used in the lca )
+
+```{r}
+
+library(UpSetR)
+
+# jpeg(file="~/Documents/Thesis/thesis_finale/Images/H3K36me3_programs_overlap.jpeg")
+upset(fromList(list(
+  MACS2=macs_gene_lists$genes_promoter$ensembl_gene_id, 
+  enRich=enRich_gene_lists$genes_promoter$ensembl_gene_id,
+  HOMER=homer_gene_lists$genes_promoter$ensembl_gene_id,
+  THOR=thor_gene_lists$genes_promoter$ensembl_gene_id,
+  BCP=bcp_gene_lists$genes_promoter$ensembl_gene_id,
+  MUSIC=music_gene_lists$genes_promoter$ensembl_gene_id)),
+  sets=c("MUSIC", "BCP", "THOR", "HOMER", "enRich", "MACS2"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=6,
+      set_size.angles = 90,
+      number.angles = 0,
+      show.numbers=FALSE,
+      text.scale = c(1.5, 1.5, 1.5, 1.5, 1.5, 1))
+ # dev.off()
+```
+
+
+
+## Get a list of combinations
+
+
+## Getting information on all the genes in chromosome 21
+
+Using biomaRt I acquire all the genes in chromosome 21 and put into variable *egs*. 
+```{r}
+# mart=useMart(biomart="ENSEMBL_MART_ENSEMBL" , dataset="hsapiens_gene_ensembl")
+# 
+# fm= Gviz:::.getBMFeatureMap()
+# #fm["symbol"]="external_gene_id"
+# 
+# ds = useDataset('hsapiens_gene_ensembl', mart=mart)
+# chroms = c(seq(1,22),"X","Y","MT")
+# 
+# 
+# egs = getBM(attributes = c('ensembl_gene_id',
+#                            'entrezgene',
+#                            'chromosome_name','start_position',
+#                            'end_position','strand'), 
+#             filters='chromosome_name',
+#             values=chroms,
+#             mart=ds) %>%
+#   filter(entrezgene>0)
+
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/mar2016egs")
+head(egs)
+
+```
+
+## Finding genes that were not found by any of the programs
+
+```{r}
+common_none = egs %>%
+  filter(!(ensembl_gene_id %in% macs_gene_lists$genes_promoter$ensembl_gene_id),
+           !(ensembl_gene_id %in% enRich_gene_lists$genes_promoter$ensembl_gene_id),
+           !(ensembl_gene_id %in% homer_gene_lists$genes_promoter$ensembl_gene_id), 
+         !(ensembl_gene_id %in% thor_gene_lists$genes_promoter$ensembl_gene_id),
+         !(ensembl_gene_id %in%
+         bcp_gene_lists$genes_promoter$ensembl_gene_id),
+         !(ensembl_gene_id %in% music_gene_lists$genes_promoter$ensembl_gene_id))
+
+```
+
+
+
+## Alter the overlap tables
+
+Add in the additional information about what genes didn't get in
+
+```{r}
+
+length((egs$ensembl_gene_id))
+
+overlap=tibble(ensembl_gene_id=egs$ensembl_gene_id, entrezgene=egs$entrezgene) %>%
+  left_join(., macs_gene_lists$genes_promoter, suffix=c("","_macs")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs=log10pval) %>%
+  left_join(., homer_gene_lists$genes_promoter, suffix=c("", "homer")) %>%
+  dplyr::select(ensembl_gene_id,entrezgene, macs, homer=score) %>%
+  left_join(., enRich_gene_lists$genes_promoter, suffix=c("", "enRich")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene,macs, homer, enRich=post_prob) %>%
+  left_join(., thor_gene_lists$genes_promoter, suffix=c("", "thor")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id,entrezgene, macs, homer, enRich, thor=score) %>%
+  left_join(., bcp_gene_lists$genes_promoter, suffix=c("", "bcp")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene,enRich, macs, homer, thor, bcp=score) %>%
+  left_join(., music_gene_lists$genes_promoter, suffix=c("", "music")) %>%
+  dplyr::select(ensembl_gene_id=ensembl_gene_id, entrezgene,enRich, macs, homer, thor, bcp, music=score)
+
+
+overlap$macs=recode(overlap$macs, .missing=0, .default=1)
+overlap$homer=recode(overlap$homer, .missing=0, .default=1)
+overlap$thor=recode(overlap$thor, .missing=0, .default=1)
+overlap$enRich=recode(overlap$enRich, .missing=0, .default=1)
+overlap$bcp=recode(overlap$bcp, .missing=0, .default=1)
+overlap$music=recode(overlap$music, .missing=0, .default=1)
+
+cor(overlap[,3:8])
+
+```
+
+
+## Alternative LCA
+
+```{r}
+library(randomLCA)
+overlap_freqs=overlap %>%
+  dplyr::group_by(macs, enRich, homer, thor, bcp, music) %>%
+  summarise(freq=n())
+
+
+overlap_freqs_withnone = overlap_freqs %>%
+full_join(as.tibble(expand.grid(
+  macs=c(0,1),
+  homer=c(0,1),
+  enRich=c(0,1), 
+  thor=c(0,1),
+  bcp=c(0,1),
+  music=c(0,1))))  %>%
+  mutate(freq=replace_na(freq, 0))
+
+set.seed(71118)
+
+programs_lca_2_simple=randomLCA(overlap_freqs_withnone[,1:6], freq=overlap_freqs_withnone$freq, 
+                       nclass=2)
+
+programs_lca_1_simple=randomLCA(overlap_freqs_withnone[,1:6], freq=overlap_freqs_withnone$freq, 
+                       nclass=1)
+programs_BIC=data.frame(Model="LCA", "Class Number"=1:2, BIC=(c(round(BIC(programs_lca_1_simple),2), round(BIC(programs_lca_2_simple), 2))))
+library(Hmisc)
+latex(as.matrix(programs_BIC), file="~/Documents/Thesis/Images/program_LCA_mar2016egs")
+
+
+```
+```{r}
+# nsims <- 999
+# obslrt <- 2 * (logLik(programs_lca_2) - logLik(programs_lca_1))
+# thesims <- simulate(programs_lca_1, nsim = nsims)
+# simlrt <- as.vector(lapply(thesims, function(x) {
+# submodel <- refit(programs_lca_1, newpatterns = x)
+# fullmodel <- refit(programs_lca_2, newpatterns = x)
+# return(2 * (logLik(fullmodel) - logLik(submodel)))
+# }))
+# 
+# print((sum(simlrt >= obslrt) + 1)/(nsims + 1))
+
+```
+
+
+```{r}
+summary(programs_lca_2_simple)
+
+lca_class_2=tibble(Class=as.factor(c(1,2)), MACS2=programs_lca_2_simple$outcomep[,1], enRich=programs_lca_2_simple$outcomep[,2], HOMER=programs_lca_2_simple$outcomep[,3], THOR=programs_lca_2_simple$outcomep[,4],
+BCP=programs_lca_2_simple$outcomep[,5],
+MUSIC=programs_lca_2_simple$outcomep[,6]) %>%
+  gather(program, binding_prob, 2:7) 
+
+
+
+a=ggplot(lca_class_2, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Binding Probability")
+
+set.seed(51018)
+outcomeProbs_simple
+#outcomeProbs_simple=outcomeProbs(programs_lca_2, boot=TRUE)
+```
+
+
+
+```{r}
+outcomeProbs_simple[[1]]=add_column(outcomeProbs_simple[[1]], Class=1)
+outcomeProbs_simple[[2]]=add_column(outcomeProbs_simple[[2]], Class=2)
+outcomep_simple=rbind(outcomeProbs_simple[[1]], outcomeProbs_simple[[2]]) %>%
+  add_column(program=rep(c("MACS2", "enRich", "HOMER", "THOR", "BCP", "MUSIC"),2)) %>%
+  as.tibble(.) %>%
+  remove_rownames()
+colnames(outcomep_simple)=c("Mean", "lower", "upper", "Class", "program")
+outcomep_simple$Class=as.factor(outcomep_simple$Class)
+
+
+
+  
+  outcomep
+a=ggplot(outcomep_simple, aes(x=program, y=Mean, group=Class))
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability") +
+  geom_line(size=1)+ 
+  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=Class), alpha=1) +
+  facet_grid(.~Class, labeller=label_both) +
+  ggsave("H3K36me3_programs_interval_probs.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+lca_simple=lca_class_2
+
+
+```
+
+
+```{r}
+postClassProbs(programs_lca_2_simple)
+fitted(programs_lca_2)
+
+library(Hmisc)
+pred_formatted = add_column(overlap_freqs_withnone,expected=(programs_lca_2_simple$fitted), Binding_prob=programs_lca_2_simple$classprob[,1])  %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,enRich,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2), Binding_prob=round(Binding_prob, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected, Binding_prob) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/Images/table_pred_H3K36me3_lca_mar2016egs")
+
+programs_lca_2$fitted
+
+
+
+#sum(filter(pred_formatted, enRich==0)$expected)
+
+```
+```{r}
+maxPostClass(programs_lca_2_simple)
+
+gene_lca_class=left_join(overlap, maxPostClass(programs_lca_2_simple)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, enRich, macs, homer, thor,bcp, music, maxProb) %>%
+  mutate(average_counts=(enRich+macs+homer+thor+bcp+music)/6)
+
+binding_genes_lca_simple=filter(gene_lca_class, maxProb==1)
+simple_votes=filter(gene_lca_class, average_counts>0.5)
+binding_genes_lca
+save(binding_genes_lca, file="~/Documents/Aim_2/homo_sapiens_neutrophil/LCA_random_programs_simple_LCA_genelists")
+```
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+class_2=binding_genes_lca
+binding_genes_lca_simple=binding_genes_lca
+
+gene.df=bitr(egs$entrezgene, fromType = "ENTREZID",
+             toType=c("ENSEMBL", "SYMBOL"),
+             OrgDb= org.Hs.eg.db)
+
+interesting_gene.df <- bitr(class_2$entrezgene, fromType = "ENTREZID",
+        toType = c("ENSEMBL", "SYMBOL"),
+        OrgDb = org.Hs.eg.db)
+
+ggo=groupGO(gene = interesting_gene.df$ENTREZID,
+            OrgDb =org.Hs.eg.db,
+            ont="MF",
+            level=3,
+            readable=TRUE)
+
+barplot(ggo, drop=TRUE, showCategory=12)
+
+ego= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+
+ego_2= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+library(viridis)
+#barplot(ego)+ scale_color_viridis()
+
+library(viridis)
+clusterProfiler::dotplot(gofilter(ego))+ scale_color_viridis()+ggsave("H3K36me3_GO_terms_simple_LCA.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=8, dpi="retina")
+
+
+gofilter(ego)
+```
+
+
+
+
+<!-- # Alternative LCA with poLCA -->
+
+<!-- ```{r} -->
+<!-- library(poLCA) -->
+<!-- overlap_poLCA=overlap %>% -->
+<!--   mutate_if(is.double, funs(.+1)) -->
+<!-- poLCA_class_2=poLCA(cbind(macs, enRich, homer, thor, bcp, music)~1, overlap_poLCA, nclass=2) -->
+<!-- poLCA_class_1=poLCA(cbind(macs, enRich, homer, thor, bcp, music)~1, overlap_poLCA, nclass=1) -->
+
+<!-- BIC_poLCA=tibble(Class=c(1,2), BIC=c(poLCA_class_1$bic,poLCA_class_2$bic)) -->
+<!-- poLCA_class_2$probs -->
+
+<!-- predcell_poLCA=poLCA.predcell(lc=poLCA_class_2,y=overlap_freqs_withnone[,1:6]+1)*sum(overlap_freqs_withnone$freq) -->
+<!-- poLCA_class_2$predcell -->
+
+<!-- binding_prob_poLCA=poLCA.posterior(poLCA_class_2, overlap_freqs_withnone[,1:6]+1)[,2] -->
+
+
+<!-- poLCA_pred_formatted = add_column(overlap_freqs_withnone, expected=predcell_poLCA[,1], Binding_prob=binding_prob_poLCA)  %>% -->
+<!--   ungroup()%>% -->
+<!--   dplyr::mutate(profile=paste0(macs,enRich,homer,thor,bcp,music)) %>% -->
+<!--   dplyr::mutate(expected=round(expected, digits=2), Binding_prob=round(Binding_prob, digits=2)) %>% -->
+<!--   dplyr::select(profile, observed=freq, expected, Binding_prob) %>% -->
+<!--   dplyr:: arrange(profile)  -->
+<!-- poLCA_pred_formatted -->
+<!-- ``` -->
+
+
+# Random Latent Class Analysis
+```{r}
+
+# set.seed(051118)
+# program_random_lca_1=randomLCA(overlap_freqs_withnone[,1:6],
+#                                freq=overlap_freqs_withnone$freq,
+#                                nclass=1,
+#                                probit=TRUE,
+#                                random=TRUE,
+#                                quadpoints=190)
+# program_random_lca_2=randomLCA(overlap_freqs_withnone[,1:6],
+#                                freq=overlap_freqs_withnone$freq,
+#                                nclass=2,
+#                                probit=TRUE,
+#                                random=TRUE,
+#                                quadpoints=190)
+# program_random_lca_1_noconstload=randomLCA(overlap_freqs_withnone[,1:6],
+#                                freq=overlap_freqs_withnone$freq,
+#                                nclass=1,
+#                                random=TRUE,
+#                                probit=TRUE,
+#                                constload =FALSE,
+#                                quadpoints=190)
+# program_random_lca_2_nocontsload=randomLCA(overlap_freqs_withnone[,1:6],
+#                                freq=overlap_freqs_withnone$freq,
+#                                nclass=2,
+#                                random=TRUE,
+#                                probit=TRUE,
+#                                constload =FALSE,
+#                                quadpoints=190)
+# save(program_random_lca_1, program_random_lca_1_noconstload, program_random_lca_2, program_random_lca_2_nocontsload, file="~/Documents/Aim_2/homo_sapiens_neutrophil/results_random_lca_mar2016")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/results_random_lca_mar2016")
+
+
+programs_BIC=data.frame(classes=rep(1:2,2), bic=c(BIC(program_random_lca_1), BIC(program_random_lca_2), BIC(program_random_lca_1_noconstload), BIC(program_random_lca_2_nocontsload)))
+
+programs_BIC
+
+
+
+```
+
+```{r}
+summary(program_random_lca_2)
+summary(program_random_lca_1_noconstload)
+
+lca_class_2=tibble(Class=as.factor(c(1,2)), MACS2=program_random_lca_2$outcomep[,1], enRich=program_random_lca_2$outcomep[,2], HOMER=program_random_lca_2$outcomep[,3], THOR=program_random_lca_2$outcomep[,4],
+BCP=program_random_lca_2$outcomep[,5],
+MUSIC=program_random_lca_2$outcomep[,6]) %>%
+  gather(program, binding_prob, 2:7) 
+
+lca_class_1=tibble(Class=as.factor(c(1,2)), MACS2=program_random_lca_1_noconstload$outcomep[,1], enRich=program_random_lca_1_noconstload$outcomep[,2], HOMER=program_random_lca_1_noconstload$outcomep[,3], THOR=program_random_lca_1_noconstload$outcomep[,4],
+BCP=program_random_lca_1_noconstload$outcomep[,5],
+MUSIC=program_random_lca_1_noconstload$outcomep[,6]) %>%
+  gather(program, binding_prob, 2:7) 
+
+
+a=ggplot(lca_class_1, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Calling Probability")
+
+a=ggplot(lca_class_2, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Calling Probability")
+# library(gdata)
+# correlation_programs=(cor(overlap_freqs[1:6]))
+# 
+# correlation_residuals_program_lca_2=tibble(order=1:15,corr=lowerTriangle(correlation_programs, byrow=TRUE))
+# 
+# a=ggplot(correlation_residuals_program_lca_2, aes(order, corr))
+# a+geom_line()+
+#   geom_point() +
+#   geom_hline(aes(yintercept=0), color="red")+
+#   ylim(-.3,.3)
+# programs_lca_2$deviance
+# program_random_lca_2_nocontsload$deviance
+# 
+# 
+
+# load("~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs")
+# repeat below
+# set.seed(51118)
+# outcomeProbs=outcomeProbs(program_random_lca_2, boot=TRUE)
+# save(outcomeProbs, file="~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs_mar2016")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs_mar2016")
+
+outcomeProbs_random_lca_2=outcomeProbs
+
+# outcomeProbs=outcomeProbs(program_random_lca_1_nocontsload, boot=TRUE)
+# save(outcomeProbs, file="~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_1_class_lca_random_programs_mar2016")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_1_class_lca_random_programs_mar2016")
+outcomeProbs_1_class_ranomd=outcomeProbs
+```
+
+
+## Two class with constant loading
+
+
+```{r}
+outcomeProbs_random_lca_2[[1]]=add_column(outcomeProbs_random_lca_2[[1]], Class=1)
+outcomeProbs_random_lca_2[[2]]=add_column(outcomeProbs_random_lca_2[[2]], Class=2)
+outcomep_random_2class=rbind(outcomeProbs_random_lca_2[[1]], outcomeProbs_random_lca_2[[2]]) %>%
+  add_column(program=rep(c("MACS2", "enRich", "HOMER", "THOR", "BCP", "MUSIC"),2)) %>%
+  as.tibble(.) %>%
+  remove_rownames() 
+colnames(outcomep_random_2class)=c("Mean", "lower", "upper", "Class", "program")
+outcomep_random_2class$Class=as.factor(outcomep_random_2class$Class)
+
+
+
+  outcomep
+a=ggplot(outcomep_random_2class, aes(x=program, y=Mean, colour=Class,group=Class))
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability") +
+  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=Class), alpha=0.5) +
+  geom_line(size=0.5)+ 
+  facet_grid(.~Class, labeller=label_both) +
+  ggsave("H3K36me3_random_lca_class_probs.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+```
+
+
+## Comparison between 2 classes; random and simple
+
+```{r}
+outcomep_random=outcomep_random_2class %>%
+  add_column(lca="random")
+outcomep_random$Class=recode(outcomep_random$Class, '1' ='2', '2'='1')
+
+outcomep_all= outcomep_simple %>%
+  add_column(lca="simple") %>%
+  rbind(outcomep_random)
+
+
+a=ggplot(outcomep_all, aes(x=program, y=Mean, group=lca))
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability") +
+#  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=lca), alpha=0.7) +
+  geom_line(size=0.5, aes(colour=lca))+ 
+  facet_grid(.~Class, labeller=label_both) +
+  scale_fill_discrete(name="Method",
+                         breaks=c("simple", "random"),
+                         labels=c("LCA", "LCRE"))+
+  ggsave("H3K36me3_random_simple_lca_class_probs.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability", colour="Method", fill="Method") +
+  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=lca), alpha=0.3) +
+  geom_line(size=0.4, aes(colour=lca))+ 
+  facet_grid(.~Class, labeller=label_both) +
+  scale_fill_brewer(palette="Dark2", breaks=c("simple", "random"),
+                         labels=c("LCA", "LCRE"))+
+    scale_colour_brewer(palette="Dark2", breaks=c("simple", "random"),
+                         labels=c("LCA", "LCRE"))+
+  ggsave("H3K36me3_random_simple_lca_class_probs_with_ribbon.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+ggplot_build(d)$data
+d
+cols=c("#1B9E77", "#D95F02")
+```
+## One class non-constant loading
+
+```{r}
+outcomeProbs_1_class_ranomd[[1]]=add_column(outcomeProbs_1_class_ranomd[[1]], Class=1)
+
+outcomep_1_random=rbind(outcomeProbs_1_class_ranomd[[1]]) %>%
+  add_column(program=rep(c("MACS2", "enRich", "HOMER", "THOR", "BCP", "MUSIC"),1)) %>%
+  as.tibble(.) %>%
+  remove_rownames() 
+colnames(outcomep_1_random)=c("Mean", "lower", "upper", "Class", "program")
+outcomep_1_random$Class=as.factor(outcomep_1_random$Class)
+
+
+
+  outcomep_1_random
+a=ggplot(outcomep_1_random, aes(x=program, y=Mean, colour=Class,group=Class))
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability") +
+  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=Class), alpha=0.5) +
+  geom_line(size=0.5)+ 
+  #facet_grid(.~Class, labeller=label_both) +
+  guides(colour=FALSE, fill=FALSE)+
+  ggsave("H3K36me3_random_lca_class_probs_1.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+```
+## Observed vs expected one class
+```{r}
+pred_formatted = add_column(overlap_freqs_withnone,expected=(program_random_lca_1_noconstload$fitted)) %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,enRich,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/Images/table_pred_H3K36me3_random_lca_1_class_mar2016")
+
+
+program_random_lca_1_noconstload
+```
+
+## Observed vs expected two class
+
+```{r}
+postClassProbs(program_random_lca_2)
+
+fitted(program_random_lca_2_nocontsload)
+
+maxPostClass(program_random_lca_2_nocontsload)
+
+sum(filter(maxPostClass(program_random_lca_2_nocontsload), maxProb==1))
+
+library(Hmisc)
+pred_formatted = add_column(overlap_freqs_withnone,expected=(program_random_lca_2$fitted), Binding_prob=program_random_lca_2$classprob[,2])  %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,enRich,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2), Binding_prob=round(Binding_prob, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected, Binding_prob) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/Images/table_pred_H3K36me3_random_lca_mar2016")
+
+```
+```{r}
+maxPostClass(program_random_lca_2_nocontsload)
+
+
+gene_lca_class=left_join(overlap, maxPostClass(program_random_lca_2)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, enRich, macs, homer, thor,bcp, music, maxProb)
+
+binding_genes_lca_random=filter(gene_lca_class, maxProb==2)
+binding_genes_lca_random
+```
+
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+class_2=binding_genes_lca_random
+
+
+gene.df=bitr(egs$entrezgene, fromType = "ENTREZID",
+             toType=c("ENSEMBL", "SYMBOL"),
+             OrgDb= org.Hs.eg.db)
+
+interesting_gene.df <- bitr(class_2$entrezgene, fromType = "ENTREZID",
+        toType = c("ENSEMBL", "SYMBOL"),
+        OrgDb = org.Hs.eg.db)
+
+ggo=groupGO(gene = interesting_gene.df$ENTREZID,
+            OrgDb =org.Hs.eg.db,
+            ont="MF",
+            level=3,
+            readable=TRUE)
+
+barplot(ggo, drop=TRUE, showCategory=12)
+
+ego= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+
+ego_2= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+library(viridis)
+barplot(ego)+ scale_color_viridis()
+
+
+clusterProfiler::dotplot(gofilter(ego))+ scale_color_viridis()+ggsave("H3K36me3_GO_terms_random_LCA.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=8, dpi="retina")
+
+
+gofilter(ego)
+```
+# Compare gene sets
+```{r}
+
+
+binding_genes_lca_random
+binding_genes_lca_simple
+
+filter(binding_genes_lca_random, ensembl_gene_id %in% binding_genes_lca_simple$ensembl_gene_id)
+
+8652/nrow(binding_genes_lca_random)
+
+library(VennDiagram)
+
+upset(fromList(list(random=binding_genes_lca_random$ensembl_gene_id, simple=binding_genes_lca_simple$ensembl_gene_id)))
+venn=venn.diagram(list(LCRE=binding_genes_lca_random$entrezgene, LCA=binding_genes_lca_simple$entrezgene),
+             filename=NULL,
+             fill=cols,
+             category.names = c("LCRE", "LCA"),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.pos=c(242, 120),
+             margin=0.05,
+             cat.dist=(0.04))
+
+
+jpeg("~/Documents/Thesis/thesis_finale/Images/LCAvsLCREDataVenn.jpeg")
+grid.draw(venn)
+dev.off()
+```
+## Two class with non-constant loading
+```{r}
+
+summary(program_random_lca_2_nocontsload)
+
+
+
+lca_class_2_NCL=tibble(Class=as.factor(c(1,2)), MACS2=program_random_lca_2_nocontsload$outcomep[,1], enRich=program_random_lca_2_nocontsload$outcomep[,2], HOMER=program_random_lca_2_nocontsload$outcomep[,3], THOR=program_random_lca_2_nocontsload$outcomep[,4],
+BCP=program_random_lca_2_nocontsload$outcomep[,5],
+MUSIC=program_random_lca_2_nocontsload$outcomep[,6]) %>%
+  gather(program, binding_prob, 2:7) 
+
+
+a=ggplot(lca_class_2_NCL, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Calling Probability")
+
+set.seed(51118)
+outcomeProbs=outcomeProbs(program_random_lca_2_nocontsload, boot=TRUE)
+# save(outcomeProbs, file="~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs_mar2016")
+# load("~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs_mar2016")
+
+outcomeProbs_random_lca_2_nocontsload=outcomeProbs
+
+# outcomeProbs=outcomeProbs(program_random_lca_1_nocontsload, boot=TRUE)
+# save(outcomeProbs, file="~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_1_class_lca_random_programs_mar2016")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_1_class_lca_random_programs_mar2016")
+outcomeProbs_1_class_ranomd=outcomeProbs
+```
+
+```{r}
+
+lca_class_2_simple$Class=recode(lca_class_2_simple$Class, "2"="1", "1"="2")
+lca_all_2class=cbind(lca_class_2, model="LCRE (CL)") %>%
+  rbind(cbind(lca_class_2_NCL, model="LCRE (NCL)")) %>%
+  rbind(cbind(lca_class_2_simple, model="LCA"))
+
+lca_all_2class$model=recode_factor(lca_all_2class$model, "LCA"="LCA", "LCRE (CL)"="LCRE (CL)", "LCRE (NCL)"="LCRE (NCL)")
+
+
+ggplot(lca_all_2class, aes(x=program, y=binding_prob, colour=model, group=model)) +
+  theme_bw()+
+   labs(x="Program", y="Calling Probability", colour="Model", fill="Model") +
+  #geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=lca), alpha=0.3) +
+  geom_line(size=0.4, aes(group=model))+ 
+  facet_grid(.~ Class, labeller=label_both) +
+   scale_fill_brewer(palette="Dark2")+
+     scale_colour_brewer(palette="Dark2")+
+  ggsave("H3K36me3_2class_random_simple_lca_class_probs.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+
+```
+```{r}
+postClassProbs(program_random_lca_2_nocontsload)
+
+fitted(program_random_lca_2_nocontsload)
+
+maxPostClass(program_random_lca_2_nocontsload)
+
+sum(filter(maxPostClass(program_random_lca_2_nocontsload), maxProb==2))
+
+library(Hmisc)
+pred_formatted = add_column(overlap_freqs_withnone,expected=(program_random_lca_2_nocontsload$fitted), Binding_prob=program_random_lca_2_nocontsload$classprob[,2])  %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,enRich,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2), Binding_prob=round(Binding_prob, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected, Binding_prob) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/Images/table_pred_H3K36me3_random_lca_nocontsload_mar2016")
+
+```
+```{r}
+
+gene_lca_class_NCL=left_join(overlap, maxPostClass(program_random_lca_2_nocontsload)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, enRich, macs, homer, thor,bcp, music, maxProb)
+
+binding_genes_lca_random_NCL=filter(gene_lca_class_NCL, maxProb==2)
+binding_genes_lca_random_NCL
+
+
+```
+
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+class_2=binding_genes_lca_random_NCL
+
+
+gene.df=bitr(egs$entrezgene, fromType = "ENTREZID",
+             toType=c("ENSEMBL", "SYMBOL"),
+             OrgDb= org.Hs.eg.db)
+
+interesting_gene.df <- bitr(class_2$entrezgene, fromType = "ENTREZID",
+        toType = c("ENSEMBL", "SYMBOL"),
+        OrgDb = org.Hs.eg.db)
+
+ggo=groupGO(gene = interesting_gene.df$ENTREZID,
+            OrgDb =org.Hs.eg.db,
+            ont="MF",
+            level=3,
+            readable=TRUE)
+
+barplot(ggo, drop=TRUE, showCategory=12)
+
+ego= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+
+ego_2= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+library(viridis)
+barplot(ego)+ scale_color_viridis()
+
+
+clusterProfiler::dotplot(gofilter(ego))+ scale_color_viridis()+ggsave("H3K36me3_GO_terms_random_LCA_NCL.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=8, dpi="retina")
+
+
+gofilter(ego)
+```
+
+```{r}
+library(VennDiagram)
+
+upset(fromList(list(random=binding_genes_lca_random$ensembl_gene_id, simple=binding_genes_lca_simple$ensembl_gene_id)))
+
+venn=venn.diagram(list(LCRE.NCL=binding_genes_lca_random_NCL$entrezgene, LCRE.CL=binding_genes_lca_random$entrezgene, LCA=binding_genes_lca_simple$entrezgene),
+             filename=NULL,
+             fill=cols,
+             category.names = c("LCRE (NCL)", "LCRE (CL)", "LCA"),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.pos=c(242, 300, 120),
+             margin=0.1,
+             cat.dist=(0.08))
+
+
+jpeg("~/Documents/Thesis/thesis_finale/Images/LCAvsLCRECLNCL_DataVenn.jpeg")
+grid.draw(venn)
+dev.off()
+
+```
+
+
+## Comparison between 2 classes; random and simple
+
+```{r}
+outcomep_random=outcomep_random_2class %>%
+  add_column(lca="random")
+outcomep_random$Class=recode(outcomep_random$Class, '1' ='2', '2'='1')
+
+outcomep_all= outcomep_simple %>%
+  add_column(lca="simple") %>%
+  rbind(outcomep_random)
+
+
+a=ggplot(outcomep_all, aes(x=program, y=Mean, group=lca))
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability") +
+#  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=lca), alpha=0.7) +
+  geom_line(size=0.5, aes(colour=lca))+ 
+  facet_grid(.~Class, labeller=label_both) +
+  scale_fill_discrete(name="Method",
+                         breaks=c("simple", "random"),
+                         labels=c("LCA", "LCRE"))+
+  ggsave("H3K36me3_random_simple_lca_class_probs.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+a+theme_bw() +
+  labs(x="Program", y="Calling Probability", colour="Method", fill="Method") +
+  geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=lca), alpha=0.3) +
+  geom_line(size=0.4, aes(colour=lca))+ 
+  facet_grid(.~Class, labeller=label_both) +
+  scale_fill_brewer(palette="Dark2", breaks=c("simple", "random"),
+                         labels=c("LCA", "LCRE"))+
+    scale_colour_brewer(palette="Dark2", breaks=c("simple", "random"),
+                         labels=c("LCA", "LCRE"))+
+  ggsave("H3K36me3_random_simple_lca_class_probs_with_ribbon.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+ggplot_build(d)$data
+d
+cols=c("#1B9E77", "#D95F02")
+```
+
+# Removing enRich
+
+## intersects without enRich
+```{r}
+upset(fromList(list(
+  MACS=macs_gene_lists$genes_promoter$ensembl_gene_id, 
+  HOMER=homer_gene_lists$genes_promoter$ensembl_gene_id,
+  THOR=thor_gene_lists$genes_promoter$ensembl_gene_id,
+  BCP=bcp_gene_lists$genes_promoter$ensembl_gene_id,
+  MUSIC=music_gene_lists$genes_promoter$ensembl_gene_id)),
+  sets=c("MACS","HOMER", "THOR", "BCP", "MUSIC"),
+      order.by = "freq",
+      keep.order = TRUE,
+      nsets=5,
+      show.numbers = FALSE,
+      set_size.angles = 90,
+      text.scale = 1.5)
+```
+
+## randomLCA
+```{r}
+
+overlap_freqs_noenrich=overlap[,c(1,2,4,5,6,7,8)] %>%
+  dplyr::group_by(macs, homer, thor, bcp, music) %>%
+  summarise(freq=n())
+
+
+overlap_freqs_withnone_noenrich = overlap_freqs_noenrich %>%
+full_join(as.tibble(expand.grid(
+  macs=c(0,1),
+  homer=c(0,1),
+  thor=c(0,1),
+  bcp=c(0,1),
+  music=c(0,1))))  %>%
+  mutate(freq=replace_na(freq, 0))
+
+# set.seed(71118)
+# 
+# programs_5_lca_2=randomLCA(overlap_freqs_withnone_noenrich[,1:5], freq=overlap_freqs_withnone_noenrich$freq, 
+#                        nclass=2, random=TRUE, probit=TRUE, quadpoints = 190)
+# 
+# programs_5_lca_1=randomLCA(overlap_freqs_withnone_noenrich[,1:5], freq=overlap_freqs_withnone_noenrich$freq, 
+#                        nclass=1, random=TRUE, probit=TRUE, quadpoints = 190)
+# 
+# programs_5_lca_2_noconst=randomLCA(overlap_freqs_withnone_noenrich[,1:5], freq=overlap_freqs_withnone_noenrich$freq, 
+#                        nclass=2, random=TRUE, constload = FALSE, probit=TRUE, quadpoints = 190)
+# 
+# programs_5_lca_1_noconst=randomLCA(overlap_freqs_withnone_noenrich[,1:5], freq=overlap_freqs_withnone_noenrich$freq, 
+#                        nclass=1, random=TRUE, constload = FALSE, probit=TRUE, quadpoints = 190)
+# 
+# programs_base_5_lca_2=randomLCA(overlap_freqs_withnone_noenrich[,1:5], freq=overlap_freqs_withnone_noenrich$freq, 
+#                        nclass=2, random=FALSE, probit=TRUE, quadpoints = 190)
+# 
+# programs_base_5_lca_1=randomLCA(overlap_freqs_withnone_noenrich[,1:5], freq=overlap_freqs_withnone_noenrich$freq, 
+#                        nclass=1, random=FALSE, probit=TRUE, quadpoints = 190)
+
+#save(programs_5_lca_1, programs_5_lca_2, programs_5_lca_1_noconst, programs_5_lca_2_noconst, programs_base_5_lca_1, programs_base_5_lca_2, file="~/Documents/Aim_2/homo_sapiens_neutrophil/noenrich_results_lca_mar2016")
+load("~/Documents/Aim_2/homo_sapiens_neutrophil/noenrich_results_lca_mar2016")
+
+programs_BIC=data.frame(classes=rep(1:2), LCA=c(BIC(programs_base_5_lca_1), BIC(programs_base_5_lca_2)),"LCRE (CL)"=c(BIC(programs_5_lca_1), BIC(programs_5_lca_2)), "LCRE (no CL)"=c(BIC(programs_5_lca_1_noconst), BIC(programs_5_lca_2_noconst))) #BIC_withenrich_random=c(BIC(program_random_lca_1), BIC(program_random_lca_2), BIC(program_random_lca_1_noconstload), BIC(program_random_lca_2_nocontsload)))
+
+
+programs_BIC
+latex(as.matrix(round(programs_BIC),2), file="~/Documents/Thesis/Images/table_BIC_H3K36me3_noenrich")
+
+
+```
+
+
+```{r}
+lca_base_2=tibble(Class=as.factor(c(1,2)), MACS2=programs_base_5_lca_2$outcomep[,1], HOMER=programs_base_5_lca_2$outcomep[,2], THOR=programs_base_5_lca_2$outcomep[,3],
+BCP=programs_base_5_lca_2$outcomep[,4],
+MUSIC=programs_base_5_lca_2$outcomep[,5]) %>%
+  gather(program, binding_prob, 2:6)
+lca_base_2$Class=recode_factor(lca_base_2$Class, "1"="2", "2"="1")
+
+lca_class_1=tibble(Class=as.factor(c(1)), MACS2=programs_5_lca_1_noconst$outcomep[,1], HOMER=programs_5_lca_1_noconst$outcomep[,2], THOR=programs_5_lca_1_noconst$outcomep[,3],
+BCP=programs_5_lca_1_noconst$outcomep[,4],
+MUSIC=programs_5_lca_1_noconst$outcomep[,5]) %>%
+  gather(program, binding_prob, 2:6)
+
+lca_class_2=tibble(Class=as.factor(c(1,2)), MACS2=programs_5_lca_2$outcomep[,1], HOMER=programs_5_lca_2$outcomep[,2], THOR=programs_5_lca_2$outcomep[,3],
+BCP=programs_5_lca_2$outcomep[,4],
+MUSIC=programs_5_lca_2$outcomep[,5]) %>%
+  gather(program, binding_prob, 2:6) 
+
+a=ggplot(lca_base_2, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Binding Probability")
+
+
+a=ggplot(lca_class_2, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Binding Probability")
+
+a=ggplot(lca_class_1, aes(program, binding_prob, group=Class, colour=Class))
+a+geom_line() + theme_bw() +labs(x="Program", y="Binding Probability")
+
+```
+```{r}
+# set.seed(51118)
+# outcomeProbs_class1=outcomeProbs(programs_5_lca_2, boot=TRUE)
+# save(outcomeProbs, file="~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs_class1_noenrich_mar2016")
+# 
+# set.seed(51118)
+# outcomeProbs_class2=outcomeProbs(programs_5_lca_1_noconst, boot=TRUE)
+# save(outcomeProbs, file="~/Documents/Aim_2/homo_sapiens_neutrophil/Outcomeprobs_lca_random_programs_class2_noenrich_mar2016")
+# outcomeProbs_1_class_ranomd=outcomeProbs
+
+
+
+```
+
+```{r}
+lca_noenrich=cbind(lca_class_2, model="LCRE (CL)") %>%
+  rbind(cbind(lca_base_2, model="LCA"))
+
+
+ggplot(lca_noenrich, aes(x=program, y=binding_prob, colour=model, group=model)) +
+  theme_bw()+
+   labs(x="Program", y="Calling Probability", colour="Model", fill="Model") +
+  #geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=lca), alpha=0.3) +
+  geom_line(size=0.4, aes(group=model))+ 
+  facet_grid(.~ Class, labeller=label_both) +
+   scale_fill_brewer(palette="Dark2")+
+     scale_colour_brewer(palette="Dark2")+
+  ggsave("H3K36me3_random_simple_lca_class_probs_with_ribbon_noenrich.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+```
+## Venn diagram
+
+```{r}
+programs_base_5_lca_2
+programs_5_lca_2
+
+gene_lca_class_simple_lca_noenrich=left_join(overlap, maxPostClass(programs_base_5_lca_2)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene,macs, homer, thor,bcp, music, maxProb) %>%
+  mutate(votes=(macs+homer+thor+bcp+music)/5) 
+
+  gene_lca_class_random_lca_noenrich=left_join(overlap, maxPostClass(programs_5_lca_2)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene,macs, homer, thor,bcp, music, maxProb)
+
+
+binding_genes_lca_simple_noenrich=filter(gene_lca_class_simple_lca_noenrich, maxProb==1)
+
+
+binding_genes_lca_random_noenrich=filter(gene_lca_class_random_lca_noenrich, maxProb==2)
+
+binding_genes_sum=filter(gene_lca_class_simple_lca_noenrich, votes>0.5)
+
+
+venn=venn.diagram(list(LCRE.CL=binding_genes_lca_random_noenrich$entrezgene, LCA=binding_genes_lca_simple_noenrich$entrezgene),
+             filename=NULL,
+             fill=cols[2:3],
+             category.names = c("LCRE (CL)", "LCA"),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.pos=c(242, 120),
+             margin=0.05,
+             cat.dist=(0.04))
+
+
+jpeg("~/Documents/Thesis/thesis_finale/Images/LCAvsLCREDataVenn_noenrich.jpeg")
+grid.draw(venn)
+dev.off()
+
+venn=venn.diagram(list(LCA=binding_genes_lca_simple$entrezgene, "LCA (no enRich)"=binding_genes_lca_simple_noenrich$entrezgene),
+             filename=NULL,
+             fill=cols[2:3],
+             category.names = c("LCA", "LCA (no enRich)"),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.pos=c(242, 120),
+             margin=0.07,
+             cat.dist=(0.04))
+
+
+
+jpeg("~/Documents/Thesis/thesis_finale/Images/LCAvsLCA_noenrich_Venn.jpeg")
+grid.draw(venn)
+dev.off()
+
+```
+
+
+## Two class with non-constant loading
+
+
+```{r}
+# outcomeProbs[[1]]=add_column(outcomeProbs[[1]], Class=1)
+# outcomeProbs[[2]]=add_column(outcomeProbs[[2]], Class=2)
+# outcomep=rbind(outcomeProbs[[1]], outcomeProbs[[2]]) %>%
+#   add_column(program=rep(c("MACS2", "enRich", "HOMER", "THOR", "BCP", "MUSIC"),2)) %>%
+#   as.tibble(.) %>%
+#   remove_rownames() 
+# colnames(outcomep)=c("Mean", "lower", "upper", "Class", "program")
+# outcomep$Class=as.factor(outcomep$Class)
+# 
+# 
+# 
+#   outcomep
+# a=ggplot(outcomep, aes(x=program, y=Mean, colour=Class,group=Class))
+# a+theme_bw() +
+#   labs(x="Program", y="Calling Probability") +
+#   geom_ribbon(aes(ymin=lower, ymax=upper,x=program, fill=Class), alpha=0.5) +
+#   geom_line(size=0.5)+ 
+#   facet_grid(.~Class, labeller=label_both) +
+#   ggsave("H3K36me3_random_lca_class_probs.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=6)
+
+
+```
+
+## Observed vs Expected + Posterior Probabilities
+
+```{r}
+postClassProbs(programs_5_lca_2)
+fitted(programs_5_lca_2)
+
+library(Hmisc)
+pred_formatted = add_column(overlap_freqs_withnone_noenrich,expected=(programs_bas5_lca_2$fitted), Binding_prob=programs_5_lca_2$classprob[,2])  %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2), Binding_prob=round(Binding_prob, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected, Binding_prob) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/Images/table_pred_H3K36me3_random_lca_noenrich")
+
+postClassProbs(programs_base_5_lca_2)
+fitted(programs_5_lca_2)
+
+pred_formatted = add_column(overlap_freqs_withnone_noenrich,expected=(programs_base_5_lca_2$fitted), Binding_prob=programs_base_5_lca_2$classprob[,1])  %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2), Binding_prob=round(Binding_prob, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected, Binding_prob) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/thesis_finale/Images/table_pred_H3K36me3_simple_lca_noenrich")
+
+
+fitted(programs_5_lca_2)
+
+pred_formatted = add_column(overlap_freqs_withnone_noenrich,expected=(programs_5_lca_1_noconst$fitted)) %>%
+  ungroup()%>%
+  dplyr::mutate(profile=paste0(macs,homer,thor,bcp,music)) %>%
+  dplyr::mutate(expected=round(expected, digits=2)) %>%
+  dplyr::select(profile, observed=freq, expected) %>%
+  dplyr:: arrange(profile) 
+  
+pred_formatted
+
+
+latex(as.matrix(pred_formatted), file="~/Documents/Thesis/Images/table_pred_H3K36me3_lca_1_class_noenrich")
+
+
+```
+
+## GO Terms
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+maxPostClass(programs_base_5_lca_2)
+
+
+gene_lca_class=left_join(overlap, maxPostClass(programs_base_5_lca_2)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene,macs, homer, thor,bcp, music, maxProb)
+
+binding_genes_lca_simple_noenrich=filter(gene_lca_class, maxProb==1)
+binding_genes_lca_random_noenrich
+
+class_2=binding_genes_lca_random_noenrich
+
+
+gene.df=bitr(egs$entrezgene, fromType = "ENTREZID",
+             toType=c("ENSEMBL", "SYMBOL"),
+             OrgDb= org.Hs.eg.db)
+
+interesting_gene.df <- bitr(class_2$entrezgene, fromType = "ENTREZID",
+        toType = c("ENSEMBL", "SYMBOL"),
+        OrgDb = org.Hs.eg.db)
+
+ggo=groupGO(gene = interesting_gene.df$ENTREZID,
+            OrgDb =org.Hs.eg.db,
+            ont="MF",
+            level=3,
+            readable=TRUE)
+
+barplot(ggo, drop=TRUE, showCategory=12)
+
+ego= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+
+ego_2= enrichGO(gene=interesting_gene.df$ENTREZID,
+              keyType = "ENTREZID",
+              OrgDb = org.Hs.eg.db,
+              ont ="MF",
+              pAdjustMethod = "BH",
+              pvalueCutoff = 0.01,
+              qvalueCutoff = 0.05,
+              readable=TRUE)
+library(viridis)
+barplot(ego)+ scale_color_viridis()
+
+
+clusterProfiler::dotplot(gofilter(ego))+ scale_color_viridis()+ggsave("H3K36me3_GO_terms_simple_LCA_noenrich.jpeg",path="~/Documents/Thesis/Images/", device="jpeg", width=12, height=8, dpi="retina")
+
+
+gofilter(ego)
+```
+
+## Venn Diagram
+
+```{r}
+
+binding_genes_lca_random
+binding_genes_lca_simple_noenrich
+binding_genes_lca_simple
+
+filter(binding_genes_lca_simple, ensembl_gene_id %in% binding_genes_lca_simple_noenrich$ensembl_gene_id)
+
+8652/nrow(binding_genes_lca_random)
+
+library(VennDiagram)
+library(RColorBrewer)
+cols= brewer.pal(n=3, name="Dark2")
+
+# 
+# upset(fromList(list(random=binding_genes_lca_random$ensembl_gene_id, simple=binding_genes_lca_simple$ensembl_gene_id,noenrich=binding_genes_lca_simple_noenrich$ensembl_gene_id)))
+# venn=venn.diagram(list(LCRE=binding_genes_lca_random$ensembl_gene_id, LCA=binding_genes_lca_simple$ensembl_gene_id, noenrich=binding_genes_lca_simple_noenrich$ensembl_gene_id),
+#              filename=NULL,
+#              fill=cols[1:2],
+#              category.names = c("LCRE", "LCA", "LCA (no enRich)"),
+#              cat.cex=1.5,
+#              cex=1.5,
+#              cat.pos=c(242, 360, 120),
+#              margin=0.05,
+#              cat.dist=(0.04))
+# 
+# 
+# jpeg("~/Documents/Thesis/Images/LCAvsLCREDataVenn_noenrich.jpeg")
+# grid.draw(venn)
+# dev.off()
+```
+## Post probability pairwise plots
+
+```{r}
+post_probs_LCA=left_join(overlap,postClassProbs(programs_lca_2_simple)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene,LCA='Class 1') #%>%
+  # add_column(model="LCA")
+
+post_probs_LCRE.CL=left_join(overlap,postClassProbs(program_random_lca_2)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, LCRE.CL='Class 2') #%>%
+  # add_column(model="LCRE.CL")
+
+post_probs_LCRE.NCL=left_join(overlap,postClassProbs(program_random_lca_2_nocontsload)) %>%
+  dplyr::select(ensembl_gene_id, entrezgene, LCRE.NCL='Class 2')# %>%
+  # add_column(model="LCRE.NCL")
+
+
+post_probs_all=left_join(post_probs_LCA, post_probs_LCRE.CL, by=c("ensembl_gene_id", "entrezgene")) %>%
+  left_join(post_probs_LCRE.NCL, by=c("ensembl_gene_id", "entrezgene"))
+
+
+
+(duplicated(post_probs_all))
+
+```
+
+
+```{r}
+
+a=ggplot(post_probs_all, aes(x=LCA, y=LCRE.CL)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Posterior Probabilities for LCA", y="Posterior Probabilities\n for LCRE (CL)")+
+  geom_abline(aes(intercept=0, slope=1))
+
+b=ggplot(post_probs_all, aes(x=LCA, y=LCRE.NCL)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Posterior Probabilities for LCA", y="Posterior Probabilities\n for LCRE (NCL)")+
+  geom_abline(aes(intercept=0, slope=1))
+
+c=ggplot(post_probs_all, aes(x=LCRE.NCL, y=LCRE.CL)) +
+  geom_point(position="jitter", alpha=0.2) +
+  theme_bw() +
+  labs(x="Posterior Probabilities for LCRE (NCL)", y="Posterior Probabilities\n for LCRE (CL)")+
+  geom_abline(aes(intercept=0, slope=1))
+  
+
+library(gridExtra)
+
+fig=grid.arrange(a,c,b, ncol=2, layout_matrix=rbind(c(1,2),
+                                                c(3, 4)))
+ggsave("Posterior_probability_pairs_for_Ch2.jpeg",plot=fig, path="~/Documents/Thesis/thesis_finale/Images/", device="jpeg", width=8, height=8)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
