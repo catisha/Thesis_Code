@@ -1,4 +1,4 @@
-# Software-AppendixA
+# Software-Appendix A
 
 ## ChIP-seq Peak Identification Software
 
